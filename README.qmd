@@ -1,0 +1,77 @@
+---
+format: gfm
+---
+
+# Assessing the performance of spatial cross-validation approaches for models of spatially structured data
+
+This repository contains the code and files necessary to create the paper "[Assessing the performance of spatial cross-validation approaches for models of spatially structured data](./paper_outputs/spatial_cv_arxiv.pdf)", hopefully published in 2023. 
+
+The project is structured to use the [targets](https://books.ropensci.org/targets/) package. You can reconstruct any step of the project via `targets::tar_make()`. Note that the simulations will take a few weeks to run on a standard computer.
+
+The paper itself is a [Quarto](https://quarto.org/) document, saved as the [paper.qmd](./paper.qmd) file. 
+
+This repository is structured as follows:
+
+```
+.
+|
+|__ R/ # Scripts and functions for processing and visualization
+  |
+  |_ calculate_autocorrelation_range.R # Empirical variograms
+  |
+  |_ calculate_block_resamples.R # Spatial blocking RMSE values
+  |
+  |_ calculate_clustered_resamples.R # Spatial clustering RMSE values
+  |
+  |_  calculate_ideal.R  # "True" RMSE values
+  |
+  |_ calculate_leave_disc_out_resamples.R # LODO & BLO3 RMSE values
+  |
+  |_ calculate_random_resamples.R # V-fold CV RMSE values
+  |
+  |_ calculate_target.R # 5th and 95th percentile of "true" RMSE
+  |
+  |_ calculate_training.R # Apparent RMSE values
+  |
+  |_ combine_rmse_tables.R # Combine RMSE values into one table
+  |
+  |_ create_rf_workflow.R # Random forest "workflow" creation
+  |
+  |_ create_sims.R # Landscape simulation from Roberts et al. (2017)
+  |
+  |_ discrete_colors.R # Color scale for most graphs
+  |
+  |_ plot_maps.R # Figure 1 function
+  |
+  |_ proportion_all_runs_in_good.R # % of runs within ideal RMSE calculation
+  |
+  |_ theme_pub.R # ggplot2 theme for graphs
+|
+|_ _extensions/mikemahoney218/arxiv/ # Quarto format for the preprint
+|
+|_ _freeze/paper/ # Cached outputs from previous paper renders
+|
+|_ _targets/ # Data and metadata from the targets pipeline
+|
+|_ paper_outputs/
+  |
+  |_ paper_files/figure-pdf/ # Figures for the PDF output
+  |
+  |_ spatial_cv_arxiv.pdf/ # The rendered PDF version of the paper
+|
+|_ .gitignore # File controlling git behavior
+|
+|_ _quarto.yml # Metadata file for Quarto rendering
+|
+|_ _targets.R # Script controlling the targets pipeline
+|
+|_ paper.bib # The BibTeX file for references for the paper
+|
+|_ paper.qmd # The Quarto document which creates the paper
+|
+|_ run.R # R script to run the targets pipeline
+|
+|_ run.sh # Shell script to run the targets pipeline
+|
+|_ simulated_spatialsample.Rproj # File for opening this project in RStudio
+```

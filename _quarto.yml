@@ -1,0 +1,5 @@
+project:
+  title: "simulated_spatialsample"
+  output-dir: paper_outputs
+
+freeze: auto

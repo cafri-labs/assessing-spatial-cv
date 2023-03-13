@@ -1,0 +1,1167 @@
+---
+title: "Assessing the performance of spatial cross-validation approaches for models of spatially structured data"
+format:
+  arxiv-pdf:
+    keep-tex: true
+    output-file: spatial_cv_arxiv
+    linenumbers: true
+    runninghead: Assessing spatial cross-validation approaches
+  elsevier-pdf:
+    keep-tex: true
+    include-in-header: 
+      text: |
+        \newpageafter{author}
+    journal: 
+      name: "Environmental Modelling \\\\& Software"
+      cite-style: authoryear
+      highlights:
+        - "Spatial cross-validation produces more accurate estimates of model performance"
+        - "We provide a taxonomy and evaluation of common spatial cross-validation methods"
+        - "The best methods combined spatially conjunct assessment sets with exclusion buffers"
+  html: default
+editor: visual
+author:
+  - name: Michael J Mahoney
+    affiliations:
+      - ref: GPES
+    orcid: 0000-0003-2402-304X
+    email: mjmahone@esf.edu
+    url: https://mm218.dev
+    correspondence: "yes"
+    attributes:
+      corresponding: true
+  - name: Lucas K Johnson
+    affiliations:
+      - ref: GPES
+    orcid: 0000-0002-7953-0260
+    email: ljohns11@esf.edu
+  - name: Julia Silge
+    affiliations:
+      - ref: Posit
+    orcid: 0000-0002-3671-836X
+    email: julia.silge@posit.co
+  - name: Hannah Frick
+    affiliations:
+      - ref: Posit
+    email: hannah@posit.co
+    orcid: 0000-0002-6049-5258
+  - name: Max Kuhn
+    affiliations:
+      - ref: Posit
+    orcid: 0000-0003-2402-136X
+    email: max@posit.co
+  - name: Colin M Beier
+    affiliations:
+      - ref: SRM
+    email: cbeier@esf.edu
+    orcid: 0000-0003-2692-7296
+affiliations:
+  - id: GPES
+    name: State University of New York College of Environmental Science and Forestry
+    department: Graduate Program in Environmental Science
+    address: 1 Forestry Drive
+    city: Syracuse, NY
+    country: USA
+    postal-code: 13210
+  - id: Posit
+    name: Posit, PBC
+    address: 250 Northern Ave
+    city: Boston, MA
+    country: USA
+    postal-code: "02210"
+  - id: SRM
+    name: State University of New York College of Environmental Science and Forestry
+    department: Department of Sustainable Resources Management
+    address: 1 Forestry Drive
+    city: Syracuse, NY
+    country: USA
+    postal-code: 13210
+abstract: |
+  Evaluating models fit to data with internal spatial structure requires specific cross-validation (CV) approaches, because randomly selecting assessment data may produce assessment sets that are not truly independent of data used to train the model. Many spatial CV methodologies have been proposed to address this by forcing models to extrapolate spatially when predicting the assessment set. However, to date there exists little guidance on which methods yield the most accurate estimates of model performance.
+  
+  We conducted simulations to compare model performance estimates produced by five common CV methods fit to spatially structured data. We found spatial CV approaches generally improved upon resubstitution and V-fold CV estimates, particularly when approaches which combined assessment sets of spatially conjunct observations with spatial exclusion buffers. To facilitate use of these techniques, we introduce the `spatialsample` package which provides tooling for performing spatial CV as part of the broader tidymodels modeling framework.
+bibliography: paper.bib
+keywords:
+  - cross-validation
+  - spatial data
+  - machine learning
+  - random forests
+  - simulation
+numbersections: true
+date: "`r Sys.Date()`"
+editor_options:
+  markdown:
+    wrap: 80
+    canonical: true
+---
+
+```{r setup}
+#| message: false
+#| warning: false
+#| echo: false
+#| include: false
+
+set.seed(123)
+
+knitr::opts_chunk$set(
+  message = FALSE,
+  warning = FALSE,
+  echo = FALSE,
+  fig.width = as.numeric(units::set_units(units::as_units(190, "mm"), "in")),
+  dpi = 1200
+)
+options(knitr.kable.NA = '')
+
+library(ragg)
+library(dplyr)
+library(ggdist)
+library(ggplot2)
+library(targets)
+library(showtext)
+library(patchwork)
+library(kableExtra)
+
+invisible(lapply(list.files("R", full.names = TRUE, recursive = TRUE), source))
+
+number_format <- scales::label_number(0.001)
+percent_format <- scales::label_percent(0.01)
+
+tar_load(landscapes)
+tar_load(autocorrelation_ranges)
+tar_load(ideal_rmse)
+tar_load(training_rmse)
+tar_load(random_resamples)
+tar_load(block_resamples)
+tar_load(clustered_resamples)
+tar_load(disc_resamples)
+tar_load(target_rmse)
+tar_load(all_rmse)
+ordered_sizes <- targets::tar_read(cellsize)
+tar_load(prop_good)
+tar_load(blocking_method)
+
+set.seed(123)
+```
+
+# Introduction {#sec-introduction}
+
+Evaluating predictive models fit using data with internal spatial dependence
+structures, as is common for Earth science and environmental data
+[@legendre1989], is a difficult task. Low-bias models, such as the machine
+learning techniques gaining traction across the literature, may overfit on the
+data used to train them. As a result, model performance metrics may be nearly
+perfect when models are used to predict the data used to train the model (the
+"resubstitution performance" of the model) [@Kuhn2013], but deteriorate when
+presented with new data.
+
+In order to detect a model's failure to generalize to new data, standard
+cross-validation (CV) evaluation approaches assign each observation to one or
+more "assessment" sets, then average performance metrics calculated against each
+assessment set using predictions from models fit using "analysis" sets
+containing all non-assessment observations. We refer to the assessment set,
+which is "held out" from the model fitting process, as $D_{\operatorname{out}}$,
+while we refer to the analysis set as $D_{\operatorname{in}}$. Splitting data
+between $D_{\operatorname{out}}$ and $D_{\operatorname{in}}$ is typically done
+randomly, which is sufficient to determine model performance on new, unrelated
+observations when working with data whose variables are independent and
+identically distributed. However, when models are fit using variables with
+internal spatial dependence (often referred to as spatial autocorrelation),
+random assignment will likely assign neighboring observations to both
+$D_{\operatorname{out}}$ and $D_{\operatorname{in}}$. Given that neighboring
+observations are often more closely related [@legendre1989], this random
+assignment yields similar results as the resubstitution performance, providing
+over-optimistic validation results that over state the ability of the model to
+generalize to new observations or to regions not well-represented in the
+training data [@Roberts2017; @bahn2012].
+
+One potential solution for this problem is to not assign data to
+$D_{\operatorname{out}}$ purely at random, but to instead section the data into
+"blocks" based upon its dependence structure and assign entire blocks to
+$D_{\operatorname{out}}$ as a unit [@Roberts2017]. For data with spatial
+structure, this means assigning observations to $D_{\operatorname{out}}$ and
+$D_{\operatorname{in}}$ based upon their spatial location, in order to increase
+the average distance between observations in $D_{\operatorname{out}}$ and those
+used to train the model. The amount of distance required to ensure accurate
+estimates of model performance is a matter of some debate, with suggestions to
+use variously the variogram ranges for model predictors, model outcomes, or
+model residuals [@lerest2014; @Roberts2017; @telford2009; @valavi2018;
+@karasiak2021]. However, it is broadly agreed that increasing the average
+distance between observations in $D_{\operatorname{out}}$ and those used to
+train the model may produce more accurate estimates of model performance.
+
+This objective -- evaluating the performance of a predictive model -- is subtly
+but importantly distinct from evaluating the accuracy of a map of predictions.
+Map accuracy assessments assume a representative probability sample in order to
+produce unbiased accuracy estimates [@stehman2019], while assessments of models
+fit using spatial data typically assume a need to estimate model performance
+without representative and independent assessment data. Such situations emerge
+frequently across model-based studies [@degruijter1990; @brus2020], such as
+during hyperparameter tuning [@schratz2019]; when extrapolating spatially to
+predict into "unknown space" without representative assessment data [@meyer2021;
+@meyer2022]; or when working with data collected via non-representative
+convenience samples (any non-probability sample where observations are collected
+on the easiest to access members of a population) as commonly occurs in ecology
+and environmental science [@martin2012; @yates2018]. In these situations,
+understanding the predictive accuracy of the model on independent data is
+essential. Although recent research has argued against spatial CV for map
+accuracy assessments [@wadoux2021], spatial CV remains an essential tool for
+evaluating the performance of predictive models.
+
+For many situations spatial CV has been shown to provide empirically better
+estimates of model performance than non-spatial methods [@bahn2012;
+@schratz2019; @meyer2018; @lerest2014; @ploton2020], and as such is popularly
+used to evaluate applied modeling projects across domains [@townsend2007;
+@meyer2019; @adams2020]. As such, a variety of methods for spatially assigning
+data to $D_{\operatorname{out}}$ have been proposed, many of which have been
+shown to improve performance estimates over randomized CV approaches. However,
+the lack of direct comparisons between alternative spatial CV approaches makes
+it difficult to know which methods may be most effective for estimating model
+performance. Understanding the different properties of various CV methods is
+particularly important given that many spatial modeling projects rely on CV for
+their primary accuracy assessments [@bastin2019; @fick2017; @vandenhoogen2019;
+@hengl2017].
+
+Here, we evaluated the leading spatial CV approaches found in the literature,
+using random forest models fit on spatially structured data following the
+simulation approach of @Roberts2017. To facilitate comparison among methods, we
+offer a useful taxonomy and definition of these CV approaches, attempting to
+unify disparate terminology used throughout the literature. We then provide
+comprehensive overview of the performance of these spatial CV methods across a
+wide array of parameterizations, providing the first comparative performance
+evaluation for many of these techniques. We found that spatial CV methods
+yielded overall better estimates of model performance than random assignment.
+Approaches that incorporated both $D_{\operatorname{out}}$ of spatially conjunct
+observations and buffers yielded the best results. Lastly, to facilitate further
+evaluation and use of spatial CV methods, we introduce the `spatialsample` R
+package that implements each of the approaches evaluated here, and avoids many
+of the pitfalls encountered by prior implementations.
+
+# `spatialsample` and the tidymodels Framework
+
+The tidymodels framework is a set of open-source packages for the R programming
+language that provide a consistent interface for common modeling tasks across a
+variety of model families and objectives following the same fundamental design
+principles as the tidyverse [@R; @tmwr; @wickham2019]. These packages help users
+follow best practices while fitting and evaluating models, with functions and
+outputs that integrate well with the other packages in the tidymodels and
+tidyverse ecosystems as well as with the rest of the R modeling ecosystem.
+Historically, data splitting and CV in the tidymodels framework has been handled
+by the `rsample` package [@rsample], with additional components of the
+tidymodels ecosystem providing functionality for hyperparameter tuning and model
+evaluation [@tune; @dials]. However, `rsample` primarily focuses on randomized
+CV approaches, and as such it has historically been difficult to implement
+spatial CV approaches within the tidymodels framework.
+
+A new tidymodels package, `spatialsample`, addresses this gap by providing a
+suite of functions to implement the most popular spatial CV approaches. The
+resamples created by `spatialsample` rely on the same infrastructure as those
+created by `rsample`, and as such can make use of the same tidymodels packages
+for hyperparameter tuning and model evaluation. As an implementation of spatial
+CV methods, `spatialsample` improves on alternate implementations in R by
+relying on the `sf` and `s2` packages for calculating distance in geographic
+coordinate reference systems, improving the accuracy of distance calculations
+and CV fold assignments when working with geographic coordinates [@sf; @s2]. The
+`spatialsample` package is also able to appropriately handle data with
+coordinate reference systems that use linear units other than meters and to
+process user-provided parameters using any units understood by the `units`
+package [@units]. The `spatialsample` package also allows users to perform
+spatial CV procedures while modeling data with polygon geometries, such as those
+provided by the US Census Bureau. Distances between polygons are calculated
+between polygon edges, rather than centroids or other internal points, to ensure
+that adjacent polygons are handled appropriately by CV functions. Finally,
+`spatialsample` provides a standard interface to apply inclusion radii and
+exclusion buffers to all CV methodologies (@sec-overview), providing a high
+degree of flexibility for specifying spatial CV patterns.
+
+# Resampling Methods {#sec-overview}
+
+This paper evaluates a number of the most popular spatial CV approaches, based
+upon their prevalence across the literature and software implementations. We
+focus on CV methods which automatically split data either randomly or spatially
+but did not address any assessment methods that divide data based upon
+pre-specified, user-defined boundaries or predictor space. As such, we use
+"distance" and related terms to refer to spatial distances between observations,
+unless we specifically refer to "distance in predictor space".
+
+## Resubstitution
+
+Evaluating a model's performance when predicting the same data used to fit the
+model yields what is commonly known as the "apparent performance" or
+"resubstitution performance" of the model [@Kuhn2013]. This procedure typically
+produces an overly-optimistic estimate of model performance, and as such is a
+poor method for estimating how well a model will generalize to new data
+[@efron1986; @gong1986; @efron1983]. We include an assessment of resubstitution
+error in this study for comparison, but do not recommend it as an evaluation
+procedure in practice.
+
+## Randomized V-fold CV
+
+Perhaps the most common approach to CV is V-fold CV, also known as k-fold CV. In
+this method, each observation is randomly assigned to one of $v$ folds. Models
+are then fit to each unique combination of $v - 1$ folds and evaluated against
+the remaining fold, with performance metrics estimated by averaging across the
+$v$ iterations [@Stone1974]. V-fold CV is generally believed to be the least
+biased of the dominant randomized CV approaches [@kuhn2019], though research has
+suggested it overestimates model performance [@varma2006; @Bates2021]. This
+optimistic bias is even more notable when training models using data with
+internal dependency structures, such as spatial structure [@Roberts2017].
+
+For this study, V-fold CV was performed using the `vfold_cv()` function in
+`rsample`.
+
+## Blocked CV
+
+One of the most straightforward forms of spatial CV is to divide the study area
+into a set of polygons using a regular grid, with all observations inside a
+given polygon assigned to $D_{\operatorname{out}}$ as a group [@valavi2018;
+@brenning2012; @wenger2012]. This technique is known as "spatial blocking"
+[@Roberts2017] or "spatial tiling" [@brenning2012]. Frequently, each block is
+used as an independent $D_{\operatorname{out}}$ [leave-one-block-out CV,
+@wenger2012], though many implementations allow users to use fewer
+$D_{\operatorname{out}}$, combining multiple blocks into sets either at random
+or via a systematic assignment approach [@valavi2018]. Spatial blocking attempts
+to address the limitations of randomized V-fold CV by introducing distance
+between $D_{\operatorname{in}}$ and $D_{\operatorname{out}}$, though the
+distance from observations on the perimeter of a block to
+$D_{\operatorname{in}}$ will be much less than that from observations near the
+center of the block [@osullivan2010]. This disparity can be addressed through
+the use of an exclusion buffer around $D_{\operatorname{out}}$, wherein points
+within a certain distance of $D_{\operatorname{out}}$ (depending on the
+implementation, calculated alternatively as distance from the polygon defining
+each block, the convex hull of points in $D_{\operatorname{out}}$, or from each
+point in $D_{\operatorname{out}}$ independently) are excluded from both
+$D_{\operatorname{out}}$ and $D_{\operatorname{in}}$ [@valavi2018].
+
+A challenge with spatial blocking is that dividing the study area using a
+standard grid often results in observations in unrelated areas being grouped
+together in a single fold, as regular gridlines likely will not align with
+relevant environmental features (for instance, blocks may span significant
+altitudinal gradients, or reach across a river to combine disjunct populations).
+Although this can be mitigated through careful parameterization of the grid, it
+is difficult to create meaningful $D_{\operatorname{out}}$ while still enforcing
+the required spatial separation between $D_{\operatorname{in}}$ and
+$D_{\operatorname{out}}$.
+
+For this study, spatial blocking was performed using the `spatial_block_cv()`
+function in `spatialsample`. Each block was treated as a unique fold
+(leave-one-block-out CV).
+
+## Clustered CV
+
+Another form of spatial CV involves grouping observations into a pre-specified
+number of clusters based on their spatial arrangement, and then treating each
+cluster as a $D_{\operatorname{out}}$ in V-fold CV [@brenning2012;
+@walvoort2010]. This approach allows for a great degree of flexibility, as
+alternative distance calculations and clustering algorithms may produce
+substantially different clusters. Similarly to spatially-blocked CV this
+approach may produce unbalanced $D_{\operatorname{out}}$ and folds that combine
+unrelated areas, though in practice most clustering algorithms typically produce
+more sensible fold boundaries than spatial blocking. Clustering is also similar
+to spatial blocking in that observations closer to the center of a cluster will
+be much further spatially separated from $D_{\operatorname{in}}$ than those near
+the perimeter, although clustering algorithms typically produce more circular
+tiles than blocking methods, and as such generally have fewer points along their
+perimeter overall. As with spatial blocking, exclusion buffers can be used to
+ensure a minimum distance between $D_{\operatorname{in}}$ and
+$D_{\operatorname{out}}$.
+
+A notable difference between spatial clustering and spatial blocking is that,
+depending upon the algorithm used to assign data to clusters, cluster boundaries
+may be non-deterministic. This stochasticity means that repeated CV may be more
+meaningful with clustered CV than with spatial blocking, but also makes it
+difficult to ensure that cluster boundaries align with meaningful boundaries.
+
+For this study, spatial clustering was performed using the
+`spatial_clustering_cv()` function in `spatialsample`. Each cluster was treated
+as a unique fold (leave-one-cluster-out CV).
+
+## Buffered Leave-One-Observation-Out CV (BLO3 CV)
+
+An alternative approach to spatial CV involves performing leave-one-out CV, a
+form of V-fold cross validation where $v$ is set to the number of observations
+such that each observation forms a separate $D_{\operatorname{out}}$, with all
+points within a buffer distance of $D_{\operatorname{out}}$ omitted from
+$D_{\operatorname{in}}$ [@telford2009; @pohjankukka2017]. As the other methods
+investigated here are all examples of leave-one-group-out CV, with groups
+defined by spatial positions, we refer to this procedure as buffered
+leave-one-observation-out CV (BLO3 CV). This approach may be more robust to
+different parameterizations than spatial clustering or blocking, as the contents
+of a given $D_{\operatorname{out}}$ are not as dependent upon the precise
+locations of blocking polygons or cluster boundaries. Many studies have
+recommended buffered leave-one-out cross validation for models fit using spatial
+data, with the size of the exclusion buffer variously determined by variogram
+ranges for model predictors, model outcomes, or model residuals [@lerest2014;
+@Roberts2017; @telford2009; @valavi2018; @karasiak2021].
+
+For this study, BLO3 CV was performed using the `spatial_buffer_vfold_cv()`
+function in `spatialsample`.
+
+## Leave-One-Disc-Out CV (LODO CV)
+
+The final spatial CV method investigated here is leave-one-disc-out CV,
+following @brenning2012. This method extends BLO3 by adding all points within a
+certain radius of each observation to $D_{\operatorname{out}}$, increasing the
+size of the final $D_{\operatorname{out}}$. Data points falling within the
+exclusion buffer of any observation in $D_{\operatorname{out}}$, including those
+added by the inclusion radius, is then removed from $D_{\operatorname{out}}$
+(@fig-maps). Similarly to blocked and clustered CV, LODO CV evaluates models
+against multiple $D_{\operatorname{out}}$ of spatially conjunct observations.
+Similar to BLO3 CV, LODO CV approach may be more robust to different parameter
+values than methods assigning $D_{\operatorname{out}}$ based upon blocking
+polygons or cluster boundaries. Unlike any of the other approaches investigated,
+observations may appear in multiple $D_{\operatorname{out}}$, with observations
+in more intensively sampled regions being selected more often.
+
+In this study, spatial leave-one-disc-out CV was performed using the
+`spatial_buffer_vfold_cv()` function in `spatialsample`. An important feature of
+this implementation of leave-disc-out CV is that the exclusion buffer is
+calculated separately for each point in $D_{\operatorname{out}}$. Where other
+implementations remove all observations within the buffer distance of the
+inclusion radius to create a uniform "doughnut" shaped buffer, `spatialsample`
+only removes observations that are within the buffer distance of data in
+$D_{\operatorname{out}}$, potentially retaining more data in
+$D_{\operatorname{in}}$ by creating an irregular buffer polygon.
+
+# Methods {#sec-methods}
+
+## Landscape Simulation {#sec-simulation}
+
+To compare the validation techniques described above, we extended the simulation
+approach used by Roberts et al. [-@Roberts2017, Box 1]. We simulated 100
+landscapes, representing independent realizations of the same data-generating
+process, generating a set of 13 variables calculated using the same stochastic
+formulations across a regularly spaced 50 x 50 cell grid, for a total of 2,500
+cells per landscape (@tbl-simulations). Simulated predictors included eight
+random Gaussian fields, generated using the `RandomFields` R package
+[@RandomFields], which uses stationary isotropic covariance models to generate
+spatially structured variables. Five additional variables were calculated as
+combinations of the randomly generated variables to imitate interactions between
+environmental variables. This simulation approach was originally designed to
+resemble the environmental data that might be used to model species abundance
+and distribution; further interpretation of what each predictor represents is
+provided in Appendix 2 of @Roberts2017.
+
+```{r}
+#| label: tbl-simulations
+#| tbl-cap: Simulated predictors generated for each independent landscape, created following Roberts et al. 2017. Predictors are indicated as being used for $y$ if they were included either in Equation 1 or used to calculate variables included in Equation 1. Predictors are indicated as being used in models if they were used as predictors in random forest models.
+tibble::tribble(
+  ~ "Name", ~ "Variable Definition", ~ "Used for $y$?", ~ "Used in model?",
+  "X1", "Random Gaussian field with exponential covariance (variance = 0.1, scale = 0.1)", "Yes", "No",
+  "X2", "Random Gaussian field with exponential covariance (variance = 0.3, scale = 0.1)", "No", "Yes",
+  "X3", "Random Gaussian field with Gaussian covariance (variance = 0.1, scale = 0.3)", "No", "Yes",
+  "X4", "If the ratio (X2 / X3) is above the 95th percentile of all values, 0; else 1.", "Yes (excluding)", "No",
+  "X5", "X1 + X2 + X3 + (X2 $\\cdot$ X3)", "Yes", "No",
+  "X6", "Random Gaussian field with exponential covariance (variance = 0.1, scale = 0.1)", "Yes", "Yes",
+  "X7", "Random Gaussian field with exponential covariance (variance = 0.1, scale = 0.1)", "No", "Yes", 
+  "X8", "Random Gaussian field with exponential covariance (variance = 0.1, scale = 0.1)", "No", "Yes",
+  "X9", "Random Gaussian field with Gaussian covariance (variance = 0.1, scale = 0.3)", "No", "Yes",
+  "X10", "Random Gaussian field with Gaussian covariance (variance = 0.1, scale = 0.3)", "No", "Yes", 
+  "X11", "X2/X3", "Yes (limiting)", "No",
+  "X12", r"($1 / (\operatorname{sqrt}(2\cdot\pi))\cdot\exp-(\operatorname{X3}^2/4)$)", "Yes", "No",
+  "X13", r"($1 / (\operatorname{sqrt}(2\cdot\pi))\cdot\exp-(\operatorname{X2}^2/4)$)", "Yes", "No"
+) |> 
+  kableExtra::kbl(booktabs = TRUE, linesep = "\\addlinespace", escape = FALSE) %>% 
+  kableExtra::kable_styling() |> 
+  kableExtra::column_spec(2, width = "20em") |> 
+  kableExtra::column_spec(4, width = "5em")
+```
+
+These predictors were then used to generate a target variable $y$ using @eq-y.
+
+$$
+y = 
+\left\{
+    \begin{array}{lr}
+        \min(y), & \text{if } \operatorname{X4} \neq 0\\
+        \operatorname{X11}, & \text{if } y\geq \operatorname{X11}\\
+        \operatorname{X1} + \operatorname{X5} + \operatorname{X6} + \operatorname{X12} + \operatorname{X13}, & \text{otherwise }
+    \end{array}
+\right\}
+$$ {#eq-y}
+
+One instance of the spatially clustered $y$ values produced by this process is
+visualized in @fig-maps.
+
+```{r}
+#| label: fig-maps
+#| fig-cap: 'One simulation of the dependent variable $y$ and several of the CV approaches used. A: Simulated data showing environmental clustering of a variable of interest, named "Target", in one simulated landscape. B: Spatial clustering CV fold assignments, as produced by `spatial_clustering_cv()`, based upon using k-means clustering to group observations spatially. C: Spatially blocked CV fold assignments, produced using `spatial_block_cv()` to group observations spatially. D: A single fold of LODO CV, showing $D_{\operatorname{in}}$ and $D_{\operatorname{out}}$ as well as the exclusion buffer, performed using `spatial_buffer_vfold_cv()` with a radius and buffer covering 10% of the mapped area. Points within the inclusion radius of the randomly selected observation are included in $D_{\operatorname{out}}$, while points within the exclusion buffer of $D_{\operatorname{out}}$ are not included in either set. For BLO3 and LODO CV, this procedure is repeated for each grid cell.'
+#| fig-height: !expr as.numeric(units::set_units(units::as_units(190, "mm"), "in"))
+plot_maps(landscapes[[1]])
+```
+
+Models were then fit using variables X2, X3, and X6 - X10. Of these seven
+variables, three were involved in calculating the target variable $y$ (X2 and
+X3, as components of X4 and X5; and X6, used directly) and therefore provide
+useful information for models, while the remaining four (X7 - X10) were included
+to allow overfitting.
+
+## Resampling Methodology {#sec-resampling}
+
+We divided each simulated landscape into folds using each of the data splitting
+approaches (@sec-overview) across a wide range of parameter sets
+(@tbl-whichparams; @tbl-paramdefs) in order to evaluate the usefulness of
+spatial CV approaches. Spatial blocking, spatial clustering, and
+leave-one-disc-out used a "leave-one-group-out" approach, where each
+$D_{\operatorname{out}}$ was made up of a single block or cluster of
+observations, with all other data (excluding any within the exclusion buffer)
+used as $D_{\operatorname{in}}$. BLO3 used a leave-one-observation-out approach.
+We additionally evaluated spatial blocking with fewer $D_{\operatorname{out}}$
+than blocks, resulting in multiple blocks being used in each
+$D_{\operatorname{out}}$. Each simulated landscape was resampled independently,
+meaning that stochastic methods (such as V-fold CV and spatial clustering)
+produced different CV folds across each simulation. All resampling used
+functions implemented in the `rsample` and `spatialsample` packages [@rsample;
+@spatialsample]. Examples of spatial clustering CV, spatially blocked CV, and
+leave-one-disc-out CV are visualized in @fig-maps.
+
+```{r}
+#| label: tbl-whichparams
+#| tbl-cap: Parameters applied to each CV method assessed, and the number of iterations performed. 100 iterations were performed per unique combination of parameters.
+tibble::tribble(
+  ~ "CV Method", ~ "Resampling function", ~ "Parameters", ~ "# of iterations",
+  "Resubstitution", " ", " ", 100,
+  "V-fold", "vfold_cv()", "V", 400,
+  "Blocked", "spatial_block_cv()", "Block size, Buffer", 8800,
+  "Clustered", "spatial_clustering_cv()", "V, Buffer, Cluster function", 8800,
+  "BLO3", "spatial_buffer_vfold_cv()", "Buffer", 1700,
+  "LODO", "spatial_buffer_vfold_cv()", "Buffer, Radius", 11100
+) |> 
+  kableExtra::kbl(booktabs = TRUE, linesep = "\\addlinespace") %>% 
+  kableExtra::kable_styling() |> 
+  kableExtra::column_spec(2, monospace = TRUE)
+```
+
+```{r}
+#| label: tbl-paramdefs
+#| tbl-cap: Definitions of parameters applied to CV methods.
+tibble::tribble(
+  ~ Parameter, ~ Values, ~ Definition,
+  "V", "2, 5, 10, 20; 2, 4, 9, 16, 25, 36, 64, 100", r"(The number of folds to assign data into. Each fold was used as $D_{\operatorname{out}}$ precisely once. The first set of values were used for spatial clustering, while the second was used for spatial blocking. For spatial clustering, this controls the number of clusters.)",
+  "Cluster function", "K-means, Hierarchical", "The algorithm used to cluster observations into folds.",
+  "Block size", "1/100, 1/64, 1/36, 1/25, 1/16, 1/9, 1/4, 1/2", "The proportion of the grid each block should occupy (such that 1/2 creates two blocks, each occupying half the grid).", 
+  "Blocking method", "Random, Systematic (continuous), Systematic (snake)", "For spatial blocking, the method for assigning blocks to folds: randomly ('random'), in a 'scanline' moving left to right across each row of the grid ('systematic (continuous)'), or moving back and forth across the rows of the grid ('systematic (snake)').",
+  "Buffer", "0.00, 0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, 0.24, 0.27, 0.30, 0.33, 0.36, 0.39, 0.42, 0.45, 0.48", r"(The size of the exclusion buffer to apply around $D_{\operatorname{out}}$, expressed as a proportion of the side length of the grid. Observations within this distance of any point in $D_{\operatorname{out}}$ are included in neither $D_{\operatorname{in}}$ nor $D_{\operatorname{out}}$. Buffer distances above 0.3 were only used for BLO3 CV, as increased buffer distances around larger $D_{\operatorname{out}}$ may produce empty $D_{\operatorname{in}}$.)", 
+  "Radius", "0.00, 0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, 0.24, 0.27, 0.30", r"(The size of the inclusion radius to apply around $D_{\operatorname{out}}$, expressed as a proportion of the side length of the grid. Observations within this distance of any point in $D_{\operatorname{out}}$ are moved from $D_{\operatorname{in}}$ into $D_{\operatorname{out}}$.)"
+) |> 
+  kableExtra::kbl(
+    booktabs = TRUE, 
+    linesep = "\\addlinespace",
+    escape = FALSE
+  ) %>% 
+  kableExtra::kable_styling() |> 
+  kableExtra::column_spec(2, width = "15em") |> 
+  kableExtra::column_spec(3, width = "20em")
+```
+
+## Model Fitting and Evaluation {#sec-models}
+
+For each iteration, we modeled the target variable $y$ using random forests as
+implemented in the `ranger` R package [@Breiman2001; @ranger], fit using
+variables X2, X3, and X6 - X10. Random forests generally provide high predictive
+accuracy even without hyperparameter tuning [@Probst2018], and as such all
+random forests were fit using the default hyperparameter settings of the
+`ranger` package, namely 500 decision trees, a minimum of 5 observations per
+leaf node, and two variables to split on per node.
+
+Model accuracy was measured using root-mean-squared error (RMSE, @eq-rmse). To
+find the "ideal" error rate that we would expect CV approaches to estimate, we
+fit 100 separate random forest models, each trained using all values within one
+of the 100 simulated landscapes. We then calculated the RMSE for each of these
+models when used to predict each of the 99 other landscapes. As each landscape
+is an independent realization of the same data-generation process, the
+relationships between predictors and $y$ is identical across landscapes,
+although the spatial relationships between $y$ and variables not used to
+generate $y$ are likely different across iterations. As such, RMSE values from a
+model trained on one landscape and used to predict the others represent the
+ability of the model to predict $y$ based upon the predictors and without
+relying upon spatial structure. These RMSE estimates therefore represent the
+"true" range of RMSE values when using these models for spatial extrapolation to
+areas with the same relationship between predictors and the target feature, but
+without any spatial correlation to the training data itself. We defined the
+success of model evaluation methods as the proportion of iterations which
+returned RMSE estimates between the 5th and 9th percentile RMSEs of this "ideal"
+estimation procedure.
+
+To find the error rate of the resubstitution approach, we fit 100 random
+forests, one to each landscape, and then calculated the RMSE for each model when
+used to predict its own training data. To find the error of each CV approach, we
+first used each CV approach to separate each landscape into $n$ folds
+(@sec-resampling). We then fit models to each combination of $n - 1$ of these
+folds, and calculated RMSE when using the model to predict the remaining
+$D_{\operatorname{out}}$ (@eq-rmse).
+
+$$
+\operatorname{RMSE} = \sqrt{(\frac{1}{n})\sum_{i=1}^{n}(y_{i} - \hat{y_{i}})^{2}}
+$$ {#eq-rmse}
+
+We then calculated the variance of the RMSE estimates of each method across the
+100 simulated landscapes, as well as the proportion of runs for each method
+which fell between the 5th and 95th percentiles of the "true" RMSE range.
+
+Based upon prior research, we expected the optimal spacing between
+$D_{\operatorname{in}}$ and $D_{\operatorname{out}}$ to be related to the range
+of spatial dependence either in the outcome variable or in model residuals
+[@lerest2014; @Roberts2017; @telford2009]. As such, we quantified the range of
+spatial autocorrelation in both the target variable $y$ and in resubstitution
+residuals from random forest models using the automated variogram fitting
+approach implemented in the `automap` R package [@automap].
+
+# Results and Discussion {#sec-results}
+
+## Spatial CV Improves Model Performance Estimates
+
+Spatial cross-validation methods consistently produced more accurate estimates
+of model performance than non-spatial methods, which were optimistically biased
+(producing too-low estimates of RMSE) (@tbl-overall; @fig-comparisons). CV
+produced the best estimates when $D_{\operatorname{out}}$ of spatially conjunct
+observations were combined with exclusion buffers (@tbl-winners). Spatially
+clustered CV and LODO, both of which enforce $D_{\operatorname{out}}$ of
+spatially conjunct observations, were among the most consistently effective CV
+methods (@fig-comparisons). Removing too much data from $D_{\operatorname{in}}$,
+such as by clustering with only two folds or blocking with only two blocks
+resulted in pessimistic over-estimates of RMSE (@fig-rmse-delta).
+
+```{r}
+#| label: tbl-overall
+#| tbl-cap: Mean RMSE estimates across all evaluated parameterizations of cross-validation strategies. Numbers in parentheses represent standard deviations. "% within target RMSE range" refers to the percentage of iterations which had RMSE estimates between the 5th and 95th percentile estimates from the true RMSE estimation procedure.
+all_rmse |> 
+  group_by(Method) |> 
+  summarise(
+    mean_rmse = mean(rmse),
+    sd_rmse = sd(rmse),
+    proportion_good = mean(good_rmse)
+  ) |> 
+  arrange(desc(proportion_good)) |>
+  transmute( 
+    Method = Method,
+    RMSE = paste0(number_format(mean_rmse), " (", number_format(sd_rmse), ")"),
+    "% within target RMSE range" = percent_format(proportion_good)
+  ) |> 
+  kableExtra::kbl(booktabs = TRUE, linesep = "\\addlinespace") %>% 
+  kableExtra::kable_styling() |> 
+  kableExtra::column_spec(3, width = "7em")
+```
+
+```{r}
+#| label: fig-comparisons
+#| fig-cap: RMSE distributions of each spatial CV method evaluated. The x axis represents the distance of an RMSE from the mean "true" RMSE values, such that negative values underpredict the true RMSE and positive values overpredict it.  Distributions are scaled relative to the number of iterations run, such that a unit area represents the same number of iterations across each method, but not necessarily the same proportion of all iterations evaluated. The green rectangle represents the 90% interval of true RMSE values used as the "target" RMSE range.
+all_rmse |> 
+  mutate(
+    name = factor(
+      name, 
+      rev(c("ideal", "clustered", "disc", "block", "randomized", "buffered_loo", "training")),
+      rev(c("True RMSE", "Clustered", "LODO", "Blocked", "V-fold", "BLO3", "Resubstitution"))
+    ),
+    rmse = rmse - mean(ideal_rmse)
+  ) |> 
+  ggplot(aes(rmse)) + 
+  geom_rect(xmin = target_rmse[[1]] - mean(ideal_rmse), 
+            xmax = target_rmse[[2]] - mean(ideal_rmse), 
+            ymin = -Inf, 
+            ymax = Inf, 
+            fill = "lightgreen") + 
+  geom_dots(aes(color = name, fill = name, y = name)) + 
+  scale_fill_manual("Method", values = c(discrete_colors(), "#ef62a1")) + 
+  scale_color_manual("Method", values = c(discrete_colors(), "#ef62a1")) + 
+  scale_x_continuous(expression(Delta~" from true RMSE")) + 
+  scale_y_discrete("Method") + 
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line.x.top = element_blank(),
+    axis.line.y.right = element_blank(),
+    legend.position = "bottom"
+  )
+```
+
+```{r}
+#| label: tbl-winners
+#| tbl-cap: Mean RMSE estimates across 100 iterations of various cross-validation strategies (bold headers) for the parameterizations producing the most accurate model performance estimates. Numbers in parentheses represent standard deviations. "% within target RMSE range" refers to the percentage of iterations which had RMSE estimates between the 5th and 95th percentile estimates from the true RMSE estimation procedure.
+all_rmse |> 
+  group_by(Method, name, v, cellsize, cluster_function, buffer, radius) |> 
+  summarise(
+    mean_rmse = mean(rmse),
+    sd_rmse = sd(rmse),
+    proportion_good = mean(good_rmse)
+  ) |> 
+  group_by(Method) |> 
+  slice_max(proportion_good, n = 3) |> 
+  slice_head(n = 3) |> 
+  mutate(
+    radius = ifelse(name == "buffered_loo", NA, radius),
+    name = factor(name, c("ideal", "clustered", "disc", "block", "randomized", "buffered_loo", "training")),
+         RMSE = paste0(number_format(mean_rmse), " (", number_format(sd_rmse), ")"),
+    "% within target RMSE range" = percent_format(proportion_good)) |> 
+  ungroup() |> 
+  arrange(name, -proportion_good) |> 
+  select(-name, -sd_rmse, -mean_rmse, -proportion_good, -Method) |> 
+  setNames(
+    c(
+      "V",
+      "Cell size",
+      "Cluster function",
+      "Exclusion buffer",
+      "Inclusion radius",
+      "RMSE",
+      "% within target RMSE range"
+    )
+  ) |> 
+  kableExtra::kbl(booktabs = TRUE, linesep = "\\addlinespace") %>% 
+  kableExtra::kable_styling() |> 
+  kableExtra::pack_rows("Ideal RMSE", 1, 1) |> 
+  kableExtra::pack_rows("Clustered", 2, 4, hline_before = TRUE) |> 
+  kableExtra::pack_rows("LODO", 5, 7, hline_before = TRUE) |> 
+  kableExtra::pack_rows("Blocked", 8, 10, hline_before = TRUE) |> 
+  kableExtra::pack_rows("V-fold", 11, 13, hline_before = TRUE) |> 
+  kableExtra::pack_rows("BLO3", 14, 16, hline_before = TRUE) |> 
+  kableExtra::pack_rows("Resubstitution", 17, 17, hline_before = TRUE) |> 
+  kableExtra::column_spec(7, width = "7em")
+```
+
+```{r}
+#| label: fig-rmse-delta
+#| fig-cap: 'Spatial CV RMSE estimates under various parameterizations. Colors represent the distance of an RMSE from the mean "true" RMSE values, such that negative values underpredict the true RMSE and positive values overpredict it. A: Spatial clustering RMSE estimates using different numbers of clusters ("V") and different sizes of exclusion buffers ("Buffer"). B: Spatial blocking RMSE estimates using different sizes of blocks ("Cell Size"; a cell size of "1/2" implies two blocks, each containing half the study area) and different sizes of exclusion buffers ("Buffer"). C: LODO RMSE estimates using different sizes of inclusion radii ("Radius") and different sizes of exclusion buffers ("Buffer"). D: BLO3 RMSE estimates using different sizes of exclusion buffers ("Buffer").'
+#| fig-height: !expr as.numeric(units::set_units(units::as_units(200, "mm"), "in"))
+clustered_plot <- clustered_resamples |> 
+  mutate(
+    rmse = rmse - mean(ideal_rmse)
+  ) |> 
+  group_by(buffer, v) |> 
+  summarise(rmse = mean(rmse)) |> 
+  ggplot(aes(factor(buffer), factor(v), fill = rmse)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_gradient2(
+    expression(Delta~" from true RMSE"),
+    limits = c(-0.50, 0.30),
+    breaks = c(-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+    labels = c("-0.5", "-0.4", "-0.3", "-0.2", "-0.1", "0.0", "+0.1", "+0.2", "+0.3"),
+    low = "#2d004b",
+    high = "#7f3b08"
+  ) +
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank()
+  ) + 
+  labs(x = "Buffer", y = "V", subtitle = "A: Spatial clustering")
+
+block_plot <- block_resamples |> 
+  mutate(
+    rmse = rmse - mean(ideal_rmse),
+    cellsize = factor(cellsize, ordered_sizes)
+  ) |> 
+  group_by(buffer, cellsize) |> 
+  summarise(rmse = mean(rmse)) |> 
+  ggplot(aes(factor(buffer), cellsize, fill = rmse)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_gradient2(
+    expression(Delta~" from true RMSE"),
+    limits = c(-0.50, 0.30),
+    breaks = c(-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+    labels = c("-0.5", "-0.4", "-0.3", "-0.2", "-0.1", "0.0", "+0.1", "+0.2", "+0.3"),
+    low = "#2d004b",
+    high = "#7f3b08"
+  ) +
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank()
+  ) + 
+  labs(x = "Buffer", y = "Cell size", subtitle = "B: Spatial blocking")
+
+disc_plot <- all_rmse |> 
+  filter(
+    name == "disc" | 
+      (name == "buffered_loo" & radius == 0 & buffer <= 0.3)
+  ) |> 
+  mutate(
+    rmse = rmse - mean(ideal_rmse)
+  ) |> 
+  group_by(buffer, radius) |> 
+  summarise(rmse = mean(rmse)) |> 
+  ggplot(aes(factor(buffer), factor(radius), fill = rmse)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_gradient2(
+    expression(Delta~" from true RMSE"),
+    limits = c(-0.50, 0.30),
+    breaks = c(-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+    labels = c("-0.5", "-0.4", "-0.3", "-0.2", "-0.1", "0.0", "+0.1", "+0.2", "+0.3"),
+    low = "#2d004b",
+    high = "#7f3b08"
+  ) +
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank()
+  ) + 
+  labs(x = "Buffer", y = "Radius", subtitle = "C: LODO")
+
+blooo_plot <- all_rmse |> 
+  filter(name == "buffered_loo" & buffer > 0.3) |> 
+  mutate(
+    rmse = rmse - mean(ideal_rmse)
+  ) |> 
+  group_by(buffer, radius) |> 
+  summarise(rmse = mean(rmse)) |> 
+  ggplot(aes(factor(buffer), factor(radius), fill = rmse)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_gradient2(
+    expression(Delta~" from true RMSE"),
+    limits = c(-0.50, 0.30),
+    breaks = c(-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+    labels = c("-0.5", "-0.4", "-0.3", "-0.2", "-0.1", "0.0", "+0.1", "+0.2", "+0.3"),
+    low = "#2d004b",
+    high = "#7f3b08"
+  ) +
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank(),
+    axis.text.y = element_blank()
+  ) + 
+  labs(x = "Buffer", y = "", subtitle = "D: BLO3")
+
+(clustered_plot / block_plot / disc_plot / blooo_plot) + 
+  plot_layout(
+    heights = c(4, 8, 11, 1),
+    guides = "collect"
+  ) & 
+  theme(
+    legend.position = "bottom",
+    legend.key.width = unit(40, "pt")
+  )
+```
+
+The best parameter sets for CV methods consistently separated the center of
+$D_{\operatorname{out}}$ from $D_{\operatorname{in}}$ by 25%-41% of the grid
+length (Clustering 25%-29%; LODO 36%-39%; Blocked 32%-41%; BLO3 24%-30%). Given
+that the target variable had a mean autocorrelation range of
+`r percent_format(mean(autocorrelation_ranges$outcome_range))` of the grid
+length (@fig-ranges), this suggests that spatial cross-validation approaches
+produce the best estimates of model performance when $D_{\operatorname{out}}$ is
+sufficiently separated from $D_{\operatorname{in}}$ such that there is no
+spatial dependency in the outcome variable between the two sets.
+
+```{r}
+#| label: fig-ranges
+#| fig-cap: Autocorrelation range distributions for the outcome variable and resubstitution model residuals, used throughout the literature to identify target distances to separate $D_{\operatorname{out}}$ and $D_{\operatorname{in}}$. Units are as a proportion of the side length of the grid. Ranges were determined via empirical variogram. Each point represents one iteration of the simulation process, while "clouds" represent the matching probability density function. Black points represent the median autocorrelation range, while the black bar represents the interquartile range and 95% interval.
+
+library(ggdist)
+autocorrelation_ranges |> 
+  select(-lm_range) |>
+  setNames(c("Model residuals", "Outcome variable")) |> 
+  mutate(idx = 1:n()) |> 
+  tidyr::pivot_longer(-idx) |> 
+  ggplot(aes(value, name, fill = name)) + 
+  stat_slab(scale = 0.7) +
+  stat_dotsinterval(side = "bottom", scale = 0.7, slab_size = NA) +
+  scale_x_continuous(expand = expansion(c(0.002, 0.02))) + 
+  scale_y_discrete(expand = expansion()) +
+  scale_fill_manual(values = discrete_colors(2)) + 
+  theme_pub(base_family = "Helvetica") + 
+  theme(legend.position = "bottom", legend.title = element_blank()) + 
+  labs(y = "", x = "Autocorrelation range (proportion of grid length)")
+```
+
+Clustering appeared to be the spatial CV method most robust to different
+parameterizations (@fig-comparisons; @fig-rmse-delta), with the highest
+proportion of all iterations within the target RMSE range (Clustered
+`r percent_format(prop_good[prop_good$Method == "Clustered", ]$proportion_good)`
+of all iterations; LODO
+`r percent_format(prop_good[prop_good$Method == "LODO", ]$proportion_good)`;
+Blocked
+`r percent_format(prop_good[prop_good$Method == "Blocked", ]$proportion_good)`;
+BLO3
+`r percent_format(prop_good[prop_good$Method == "BLO3", ]$proportion_good)`)
+(@fig-rmse-prop). This may, however, simply reflect the relatively narrow range
+of parameters evaluated with clustering, as both blocking and LODO had a wide
+range of parameters which returned estimates within the target range at least
+half the time (@fig-rmse-prop). While BLO3 exhibited increasing RMSE with
+increasing buffer radii (@fig-rmse-delta), as frequently reported in the
+literature, we found it only rarely produced RMSE estimates within the target
+range (@fig-rmse-prop).
+
+```{r}
+#| label: fig-rmse-prop
+#| fig-cap: 'Percentage of RMSE estimates within the target range (the 90% interval of true RMSE values) from spatial CV methods under various parameterizations. A: Spatial clustering using different numbers of clusters ("V") and different sizes of exclusion buffers ("Buffer"). B: Spatial blocking using different sizes of blocks ("Cell Size"; a cell size of "1/2" implies two blocks, each containing half the study area) and different sizes of exclusion buffers ("Buffer"). C: LODO using different sizes of inclusion radii ("Radius") and different sizes of exclusion buffers ("Buffer"). D: BLO3 using different sizes of exclusion buffers ("Buffer").'
+#| fig-height: !expr as.numeric(units::set_units(units::as_units(200, "mm"), "in"))
+clustered_plot <- clustered_resamples |> 
+  group_by(buffer, v) |> 
+  summarise(good = sum(rmse >= target_rmse[[1]] & rmse <= target_rmse[[2]]) / n()) |> 
+  ggplot(aes(factor(buffer), factor(v), fill = good)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_distiller(
+    name = "% of iterations within target RMSE range",
+    labels = scales::label_percent(),
+    palette = "Greens",
+    direction = 1,
+    limits = c(0, 0.65)
+  ) +
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank()
+  ) + 
+  labs(x = "Buffer", y = "V", subtitle = "A: Spatial clustering")
+
+block_plot <- block_resamples |> 
+  mutate(cellsize = factor(cellsize, ordered_sizes)) |> 
+  group_by(buffer, cellsize) |> 
+  summarise(good = sum(rmse >= target_rmse[[1]] & rmse <= target_rmse[[2]]) / n()) |> 
+  ggplot(aes(factor(buffer), cellsize, fill = good)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_distiller(
+    name = "% of iterations within target RMSE range",
+    labels = scales::label_percent(),
+    palette = "Greens",
+    direction = 1,
+    limits = c(0, 0.65)
+  ) +
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank()
+  ) + 
+  labs(x = "Buffer", y = "Cell size", subtitle = "B: Spatial blocking")
+
+disc_plot <- all_rmse |> 
+  filter(
+    name == "disc" | 
+      (name == "buffered_loo" & radius == 0 & buffer <= 0.3)
+  ) |> 
+  group_by(buffer, radius) |> 
+  summarise(good = sum(rmse >= target_rmse[[1]] & rmse <= target_rmse[[2]]) / n()) |> 
+  ggplot(aes(factor(buffer), factor(radius), fill = good)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_distiller(
+    name = "% of iterations within target RMSE range",
+    labels = scales::label_percent(),
+    palette = "Greens",
+    direction = 1,
+    limits = c(0, 0.65)
+  ) +
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank()
+  ) + 
+  labs(x = "Buffer", y = "Radius", subtitle = "C: LODO")
+
+blooo_plot <- all_rmse |> 
+  filter(name == "buffered_loo" & buffer > 0.3) |> 
+  group_by(buffer, radius) |> 
+  summarise(good = sum(rmse >= target_rmse[[1]] & rmse <= target_rmse[[2]]) / n()) |> 
+  ggplot(aes(factor(buffer), factor(radius), fill = good)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_distiller(
+    name = "% of iterations within target RMSE range",
+    labels = scales::label_percent(),
+    palette = "Greens",
+    direction = 1,
+    limits = c(0, 0.65)
+  ) +
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank(),
+    axis.text.y = element_blank()
+  ) + 
+  labs(x = "Buffer", y = "", subtitle = "D: BLO3")
+
+(clustered_plot / block_plot / disc_plot / blooo_plot) + 
+  plot_layout(
+    heights = c(4, 8, 11, 1),
+    guides = "collect"
+  ) & 
+  theme(
+    legend.position = "bottom",
+    legend.key.width = unit(40, "pt")
+  )
+```
+
+RMSE estimates from spatial blocking were inversely related to the number of
+$D_{\operatorname{out}}$ used, likely due to the distance between
+$D_{\operatorname{out}}$ and $D_{\operatorname{in}}$ increasing if adjacent
+blocks were assigned to the same $D_{\operatorname{out}}$ (@fig-blocks-with-v).
+RMSE estimates generally increased gradually as the number of
+$D_{\operatorname{out}}$ decreased, though notable increases were observed when
+blocks were assigned via the continuous systematic method and the number of
+cells in each grid row were evenly divisible by the number of
+$D_{\operatorname{out}}$ (e.g., when 1/16th cell sizes produced by a 4-by-4 grid
+were divided into 4 folds). In these situations, each column of the grid will be
+entirely assigned to the same $D_{\operatorname{out}}$, somewhat resembling the
+CV method of @wenger2012, producing $D_{\operatorname{out}}$ which have no
+neighboring $D_{\operatorname{in}}$ observations in the *y* direction and
+therefore a greater average distance between $D_{\operatorname{out}}$ and
+$D_{\operatorname{in}}$. Overall, these results suggest that using fewer
+$D_{\operatorname{out}}$ than blocks may be appropriate when the range of
+autocorrelation in the outcome variable is relatively small and there is concern
+about large blocks restricting predictor space [@Roberts2017]; however, with
+longer autocorrelation ranges it is likely best to use a leave-one-block-out
+approach with fewer, larger blocks.
+
+```{r}
+#| label: fig-blocks-with-v
+#| fig-cap: 'RMSE estimates from spatially blocked CV with various block sizes assigned to various numbers of $D_{\operatorname{out}}$. A: Spatial CV RMSE estimates under various parameterizations. Colors represent the distance of an RMSE from the mean "true" RMSE values, such that negative values underpredict the true RMSE and positive values overpredict it. B: Percentage of RMSE estimates within the target range (the 90% interval of true RMSE values). Labels above each panel refer to the method for assigning blocks to folds: either random assignment, systematically with each row assigned from left to right ("continuous"), or systematically with each row assigned in a "snaking" pattern (first row left to right, next row right to left, then repeating).'
+#| fig-height: !expr as.numeric(units::set_units(units::as_units(200, "mm"), "in"))
+v_graph_data <- block_resamples |> 
+  mutate(v = case_when(
+    cellsize == "1/100" ~ 100,
+    cellsize == "1/64" ~ 64,
+    cellsize == "1/36" ~ 36,
+    cellsize == "1/25" ~ 25,
+    cellsize == "1/16" ~ 16,
+    cellsize == "1/9" ~ 9,
+    cellsize == "1/4" ~ 4,
+    cellsize == "1/2" ~ 2,
+  )) |> 
+  filter(buffer == 0) |> 
+  select(-buffer) |> 
+  tidyr::crossing(tibble::tibble(method = blocking_method)) |> 
+  rbind(targets::tar_read(block_resamples_with_v)) |> 
+  mutate(cellsize = factor(cellsize, ordered_sizes),
+    method = factor(
+      method, 
+      levels = c("random", "continuous", "snake"),
+      labels = c("Random assignment", "Systematic (continuous)", "Systematic (snaking)")
+    ))
+
+(v_graph_data |> 
+  mutate(rmse = rmse - mean(ideal_rmse)) |> 
+  group_by(method, cellsize, v) |> 
+  summarise(rmse = mean(rmse)) |> 
+  ggplot(aes(factor(v), cellsize, fill = rmse)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_gradient2(
+    expression(Delta~" from true RMSE"),
+    limits = c(-0.50, 0.30),
+    breaks = c(-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+    labels = c("-0.5", "-0.4", "-0.3", "-0.2", "-0.1", "0.0", "+0.1", "+0.2", "+0.3"),
+    low = "#2d004b",
+    high = "#7f3b08"
+  ) +
+  facet_wrap(~ method) + 
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(40, "pt"),
+    strip.text = element_text(size = 9.9),
+    strip.clip = "off"
+  ) + 
+  labs(x = "# Folds", y = "Cell size", subtitle = "A")) /
+(v_graph_data |> 
+  group_by(method, v, cellsize) |> 
+  summarise(good = sum(rmse >= target_rmse[[1]] & rmse <= target_rmse[[2]]) / n()) |> 
+  ggplot(aes(factor(v), factor(cellsize), fill = good)) + 
+  geom_tile(color = "black", size = 0.2) + 
+  scale_fill_distiller(
+    name = "% of iterations within target RMSE range",
+    labels = scales::label_percent(),
+    palette = "Greens",
+    direction = 1,
+    limits = c(0, 0.65)
+  ) +
+  facet_wrap(~ method) + 
+  theme_pub(base_family = "Helvetica") + 
+  theme(
+    axis.line = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(40, "pt"),
+    strip.text = element_text(size = 9.9),
+    strip.clip = "off"
+  ) + 
+  labs(x = "# Folds", y = "Cell size", subtitle = "B"))
+```
+
+As such, the recommendations from this study are clear: CV-based performance
+assessments of models fit using spatial data benefit from spatial CV approaches.
+Those spatial CV approaches are most likely to return good estimates of true
+model accuracy if they combine $D_{\operatorname{out}}$ of spatially conjunct
+observations with exclusion buffers, such that the average observation is
+separated from $D_{\operatorname{in}}$ by enough distance that there is no
+spatial dependency in the outcome variable between $D_{\operatorname{in}}$ and
+$D_{\operatorname{out}}$.
+
+## Limitations
+
+This simulation study assumed that spatial CV could take advantage of regularly
+distributed observations, such that all locations had a similar density of
+measurement points. This assumption is often violated, as it is often
+impractical to obtain a uniform sample across large areas, and as such
+observations are often clustered in more convenient locations and relatively
+sparse in less accessible areas [@meyer2022; @martin2012]. Alternative
+approaches not investigated in this study may be more effective in these
+situations; for instance, when the expected distance between training data and
+model predictions is known, @milà2022 proposes an alternative nearest neighbor
+distance matching CV approach which may equal or improve upon buffered
+leave-one-out CV. An alternative approach put forward by @meyer2018 uses
+meaningful, human-defined locations as groups for CV, which may produce better
+results than the automated partitioning methods investigated in this study.
+While we believe our results clearly demonstrate the benefits of spatial CV for
+sampling designs resembling our simulation, we do not pretend to present the one
+CV approach to rule them all.
+
+We additionally do not expect these results, focused upon using CV to evaluate
+the accuracy of predictive models, will necessarily transfer to map accuracy
+assessments. @stehman2019 explained that design-based sampling approaches
+provide unbiased assessments of map accuracy, while @wadoux2021 demonstrated
+that spatial CV methods may be overly pessimistic when assessing map accuracy,
+and @debruin2022 suggested sampling-intensity weighted CV approaches for map
+accuracy assessments in situations where the study area has been unevenly
+sampled. However, we expect these results will be informative in the many
+situations requiring estimates of model accuracy, particularly given that
+traditional held-out test sets are somewhat rare in the spatial modeling
+literature.
+
+Lastly, we did not investigate any CV approaches which aim to preserve outcome
+or predictor distributions across $D_{\operatorname{out}}$. When working with
+imbalanced outcomes, random sampling may produce $D_{\operatorname{out}}$ with
+notably different outcome distributions than the overall training data, which
+may bias performance estimates. Assigning stratified samples of observations to
+$D_{\operatorname{out}}$ can address this, but it is not obvious how to use
+stratified sampling when assigning groups of observations (such as a spatial
+cluster or block), with one outcome value per observation, to
+$D_{\operatorname{out}}$ as a unit. The `rsample` package allows stratified CV
+when all observations within a given group have identical outcome values (that
+is, when groups are strictly nested within the stratification variable), but
+this condition is rare and difficult to enforce when using unsupervised group
+assignment based on spatial location, as with all the spatial CV methods we
+investigated.
+
+Creating $D_{\operatorname{out}}$ based on predictor space, rather than outcome
+distributions, has also been proposed as a solution to spatial CV procedures
+restricting the predictor ranges present in $D_{\operatorname{in}}$. This is a
+particular challenge if the predictors themselves are spatially structured, and
+may unintentionally force models to extrapolate further in predictor space than
+would be expected when predicting new data [@Roberts2017]. As increasing
+distance in predictor space often correlates with increasing error [e.g.
+@thuiller2004; @sheridan2004; @meyer2021], @Roberts2017 suggest blocking
+approaches to minimize distance in predictor space between folds, although to
+the best of our knowledge these approaches are not yet in widespread use. A
+related field of research suggests methods for calculating the applicability
+domain of a model [@netzeva2005; @meyer2021], which can help to identify when
+predicting new observations will require extrapolation in predictor space, and
+will likely produce predictions with higher than expected errors. Such methods
+are particularly well-equipped to supplement spatial CV procedures, as it
+adjusts the permissible distance in predictor space based upon the distance
+between $D_{\operatorname{in}}$ and $D_{\operatorname{out}}$.
+
+# Conclusion {#sec-conclusion}
+
+These results reinforce that spatial CV is essential for evaluating the
+performance of predictive models fit to data with internal spatial structure,
+particularly in situations where design-based map accuracy assessments are not
+practical or germane. Techniques that apply exclusion buffers around assessment
+sets of spatially conjunct observations, such as spatial clustering and LODO,
+are likely to produce the best estimates of model performance. The most accurate
+estimates of model performance are produced when the assessment and analysis
+data are sufficiently separated so that there is no spatial dependence in the
+outcome variable between the two sets.
+
+# Acknowledgements
+
+We would like to thank Posit, PBC, for support in the development of the
+`rsample` and `spatialsample` packages.
+
+# Software, data, and code availability
+
+The `spatialsample` package is available online at
+https://github.com/tidymodels/spatialsample . All data and code used in this
+paper are available online at https://github.com/cafri-labs/assessing-spatial-cv
+.
+
+{{< pagebreak >}}
+
+# References {#references .unnumbered}

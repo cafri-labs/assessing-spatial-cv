@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.2.335">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Michael J Mahoney">
+<meta name="author" content="Lucas K Johnson">
+<meta name="author" content="Julia Silge">
+<meta name="author" content="Hannah Frick">
+<meta name="author" content="Max Kuhn">
+<meta name="author" content="Colin M Beier">
+<meta name="dcterms.date" content="2023-03-13">
+<meta name="keywords" content="cross-validation, spatial data, machine learning, random forests, simulation">
+
+<title>Assessing the performance of spatial cross-validation approaches for models of spatially structured data</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1.6em;
+  vertical-align: middle;
+}
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+}
+.hanging div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}
+</style>
+
+
+<script src="paper_files/libs/clipboard/clipboard.min.js"></script>
+<script src="paper_files/libs/quarto-html/quarto.js"></script>
+<script src="paper_files/libs/quarto-html/popper.min.js"></script>
+<script src="paper_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="paper_files/libs/quarto-html/anchor.min.js"></script>
+<link href="paper_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="paper_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="paper_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="paper_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="paper_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+
+<script src="paper_files/libs/kePrint-0.0.1/kePrint.js"></script>
+<link href="paper_files/libs/lightable-0.0.1/lightable.css" rel="stylesheet">
+
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+</head>
+
+<body class="fullcontent">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Assessing the performance of spatial cross-validation approaches for models of spatially structured data</h1>
+</div>
+
+
+<div class="quarto-title-meta-author">
+  <div class="quarto-title-meta-heading">Authors</div>
+  <div class="quarto-title-meta-heading">Affiliations</div>
+  
+    <div class="quarto-title-meta-contents">
+    <a href="https://mm218.dev">Michael J Mahoney</a> <a href="https://orcid.org/0000-0003-2402-304X" class="quarto-title-author-orcid"> <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg=="></a>
+  </div>
+    <div class="quarto-title-meta-contents">
+        <p class="affiliation">
+            State University of New York College of Environmental Science and Forestry
+          </p>
+      </div>
+      <div class="quarto-title-meta-contents">
+    Lucas K Johnson <a href="https://orcid.org/0000-0002-7953-0260" class="quarto-title-author-orcid"> <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg=="></a>
+  </div>
+    <div class="quarto-title-meta-contents">
+        <p class="affiliation">
+            State University of New York College of Environmental Science and Forestry
+          </p>
+      </div>
+      <div class="quarto-title-meta-contents">
+    Julia Silge <a href="https://orcid.org/0000-0002-3671-836X" class="quarto-title-author-orcid"> <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg=="></a>
+  </div>
+    <div class="quarto-title-meta-contents">
+        <p class="affiliation">
+            Posit, PBC
+          </p>
+      </div>
+      <div class="quarto-title-meta-contents">
+    Hannah Frick <a href="https://orcid.org/0000-0002-6049-5258" class="quarto-title-author-orcid"> <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg=="></a>
+  </div>
+    <div class="quarto-title-meta-contents">
+        <p class="affiliation">
+            Posit, PBC
+          </p>
+      </div>
+      <div class="quarto-title-meta-contents">
+    Max Kuhn <a href="https://orcid.org/0000-0003-2402-136X" class="quarto-title-author-orcid"> <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg=="></a>
+  </div>
+    <div class="quarto-title-meta-contents">
+        <p class="affiliation">
+            Posit, PBC
+          </p>
+      </div>
+      <div class="quarto-title-meta-contents">
+    Colin M Beier <a href="https://orcid.org/0000-0003-2692-7296" class="quarto-title-author-orcid"> <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg=="></a>
+  </div>
+    <div class="quarto-title-meta-contents">
+        <p class="affiliation">
+            State University of New York College of Environmental Science and Forestry
+          </p>
+      </div>
+    </div>
+
+<div class="quarto-title-meta">
+
+      
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">March 13, 2023</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+<div>
+  <div class="abstract">
+    <div class="abstract-title">Abstract</div>
+    <p>Evaluating models fit to data with internal spatial structure requires specific cross-validation (CV) approaches, because randomly selecting assessment data may produce assessment sets that are not truly independent of data used to train the model. Many spatial CV methodologies have been proposed to address this by forcing models to extrapolate spatially when predicting the assessment set. However, to date there exists little guidance on which methods yield the most accurate estimates of model performance.</p>
+    <p>We conducted simulations to compare model performance estimates produced by five common CV methods fit to spatially structured data. We found spatial CV approaches generally improved upon resubstitution and V-fold CV estimates, particularly when approaches which combined assessment sets of spatially conjunct observations with spatial exclusion buffers. To facilitate use of these techniques, we introduce the <code>spatialsample</code> package which provides tooling for performing spatial CV as part of the broader tidymodels modeling framework.</p>
+  </div>
+</div>
+
+</header>
+
+<section id="sec-introduction" class="level1">
+<h1>Introduction</h1>
+<p>Evaluating predictive models fit using data with internal spatial dependence structures, as is common for Earth science and environmental data <span class="citation" data-cites="legendre1989">(<a href="#ref-legendre1989" role="doc-biblioref">Legendre and Fortin 1989</a>)</span>, is a difficult task. Low-bias models, such as the machine learning techniques gaining traction across the literature, may overfit on the data used to train them. As a result, model performance metrics may be nearly perfect when models are used to predict the data used to train the model (the “resubstitution performance” of the model) <span class="citation" data-cites="Kuhn2013">(<a href="#ref-Kuhn2013" role="doc-biblioref">Kuhn and Johnson 2013</a>)</span>, but deteriorate when presented with new data.</p>
+<p>In order to detect a model’s failure to generalize to new data, standard cross-validation (CV) evaluation approaches assign each observation to one or more “assessment” sets, then average performance metrics calculated against each assessment set using predictions from models fit using “analysis” sets containing all non-assessment observations. We refer to the assessment set, which is “held out” from the model fitting process, as <span class="math inline">\(D_{\operatorname{out}}\)</span>, while we refer to the analysis set as <span class="math inline">\(D_{\operatorname{in}}\)</span>. Splitting data between <span class="math inline">\(D_{\operatorname{out}}\)</span> and <span class="math inline">\(D_{\operatorname{in}}\)</span> is typically done randomly, which is sufficient to determine model performance on new, unrelated observations when working with data whose variables are independent and identically distributed. However, when models are fit using variables with internal spatial dependence (often referred to as spatial autocorrelation), random assignment will likely assign neighboring observations to both <span class="math inline">\(D_{\operatorname{out}}\)</span> and <span class="math inline">\(D_{\operatorname{in}}\)</span>. Given that neighboring observations are often more closely related <span class="citation" data-cites="legendre1989">(<a href="#ref-legendre1989" role="doc-biblioref">Legendre and Fortin 1989</a>)</span>, this random assignment yields similar results as the resubstitution performance, providing over-optimistic validation results that over state the ability of the model to generalize to new observations or to regions not well-represented in the training data <span class="citation" data-cites="Roberts2017 bahn2012">(<a href="#ref-Roberts2017" role="doc-biblioref">Roberts et al. 2017</a>; <a href="#ref-bahn2012" role="doc-biblioref">Bahn and McGill 2012</a>)</span>.</p>
+<p>One potential solution for this problem is to not assign data to <span class="math inline">\(D_{\operatorname{out}}\)</span> purely at random, but to instead section the data into “blocks” based upon its dependence structure and assign entire blocks to <span class="math inline">\(D_{\operatorname{out}}\)</span> as a unit <span class="citation" data-cites="Roberts2017">(<a href="#ref-Roberts2017" role="doc-biblioref">Roberts et al. 2017</a>)</span>. For data with spatial structure, this means assigning observations to <span class="math inline">\(D_{\operatorname{out}}\)</span> and <span class="math inline">\(D_{\operatorname{in}}\)</span> based upon their spatial location, in order to increase the average distance between observations in <span class="math inline">\(D_{\operatorname{out}}\)</span> and those used to train the model. The amount of distance required to ensure accurate estimates of model performance is a matter of some debate, with suggestions to use variously the variogram ranges for model predictors, model outcomes, or model residuals <span class="citation" data-cites="lerest2014 Roberts2017 telford2009 valavi2018 karasiak2021">(<a href="#ref-lerest2014" role="doc-biblioref">Le Rest et al. 2014</a>; <a href="#ref-Roberts2017" role="doc-biblioref">Roberts et al. 2017</a>; <a href="#ref-telford2009" role="doc-biblioref">Telford and Birks 2009</a>; <a href="#ref-valavi2018" role="doc-biblioref">Valavi et al. 2018</a>; <a href="#ref-karasiak2021" role="doc-biblioref">Karasiak et al. 2021</a>)</span>. However, it is broadly agreed that increasing the average distance between observations in <span class="math inline">\(D_{\operatorname{out}}\)</span> and those used to train the model may produce more accurate estimates of model performance.</p>
+<p>This objective – evaluating the performance of a predictive model – is subtly but importantly distinct from evaluating the accuracy of a map of predictions. Map accuracy assessments assume a representative probability sample in order to produce unbiased accuracy estimates <span class="citation" data-cites="stehman2019">(<a href="#ref-stehman2019" role="doc-biblioref">Stehman and Foody 2019</a>)</span>, while assessments of models fit using spatial data typically assume a need to estimate model performance without representative and independent assessment data. Such situations emerge frequently across model-based studies <span class="citation" data-cites="degruijter1990 brus2020">(<a href="#ref-degruijter1990" role="doc-biblioref">Gruijter and Braak 1990</a>; <a href="#ref-brus2020" role="doc-biblioref">Brus 2020</a>)</span>, such as during hyperparameter tuning <span class="citation" data-cites="schratz2019">(<a href="#ref-schratz2019" role="doc-biblioref">Schratz et al. 2019</a>)</span>; when extrapolating spatially to predict into “unknown space” without representative assessment data <span class="citation" data-cites="meyer2021 meyer2022">(<a href="#ref-meyer2021" role="doc-biblioref">Meyer and Pebesma 2021</a>, <a href="#ref-meyer2022" role="doc-biblioref">2022</a>)</span>; or when working with data collected via non-representative convenience samples (any non-probability sample where observations are collected on the easiest to access members of a population) as commonly occurs in ecology and environmental science <span class="citation" data-cites="martin2012 yates2018">(<a href="#ref-martin2012" role="doc-biblioref">Martin, Blossey, and Ellis 2012</a>; <a href="#ref-yates2018" role="doc-biblioref">Yates et al. 2018</a>)</span>. In these situations, understanding the predictive accuracy of the model on independent data is essential. Although recent research has argued against spatial CV for map accuracy assessments <span class="citation" data-cites="wadoux2021">(<a href="#ref-wadoux2021" role="doc-biblioref">Wadoux et al. 2021</a>)</span>, spatial CV remains an essential tool for evaluating the performance of predictive models.</p>
+<p>For many situations spatial CV has been shown to provide empirically better estimates of model performance than non-spatial methods <span class="citation" data-cites="bahn2012 schratz2019 meyer2018 lerest2014 ploton2020">(<a href="#ref-bahn2012" role="doc-biblioref">Bahn and McGill 2012</a>; <a href="#ref-schratz2019" role="doc-biblioref">Schratz et al. 2019</a>; <a href="#ref-meyer2018" role="doc-biblioref">Meyer et al. 2018</a>; <a href="#ref-lerest2014" role="doc-biblioref">Le Rest et al. 2014</a>; <a href="#ref-ploton2020" role="doc-biblioref">Ploton et al. 2020</a>)</span>, and as such is popularly used to evaluate applied modeling projects across domains <span class="citation" data-cites="townsend2007 meyer2019 adams2020">(<a href="#ref-townsend2007" role="doc-biblioref">Townsend, Papeş, and Eaton 2007</a>; <a href="#ref-meyer2019" role="doc-biblioref">Meyer et al. 2019</a>; <a href="#ref-adams2020" role="doc-biblioref">Adams et al. 2020</a>)</span>. As such, a variety of methods for spatially assigning data to <span class="math inline">\(D_{\operatorname{out}}\)</span> have been proposed, many of which have been shown to improve performance estimates over randomized CV approaches. However, the lack of direct comparisons between alternative spatial CV approaches makes it difficult to know which methods may be most effective for estimating model performance. Understanding the different properties of various CV methods is particularly important given that many spatial modeling projects rely on CV for their primary accuracy assessments <span class="citation" data-cites="bastin2019 fick2017 vandenhoogen2019 hengl2017">(<a href="#ref-bastin2019" role="doc-biblioref">Bastin et al. 2019</a>; <a href="#ref-fick2017" role="doc-biblioref">Fick and Hijmans 2017</a>; <a href="#ref-vandenhoogen2019" role="doc-biblioref">Hoogen et al. 2019</a>; <a href="#ref-hengl2017" role="doc-biblioref">Hengl et al. 2017</a>)</span>.</p>
+<p>Here, we evaluated the leading spatial CV approaches found in the literature, using random forest models fit on spatially structured data following the simulation approach of <span class="citation" data-cites="Roberts2017">Roberts et al. (<a href="#ref-Roberts2017" role="doc-biblioref">2017</a>)</span>. To facilitate comparison among methods, we offer a useful taxonomy and definition of these CV approaches, attempting to unify disparate terminology used throughout the literature. We then provide comprehensive overview of the performance of these spatial CV methods across a wide array of parameterizations, providing the first comparative performance evaluation for many of these techniques. We found that spatial CV methods yielded overall better estimates of model performance than random assignment. Approaches that incorporated both <span class="math inline">\(D_{\operatorname{out}}\)</span> of spatially conjunct observations and buffers yielded the best results. Lastly, to facilitate further evaluation and use of spatial CV methods, we introduce the <code>spatialsample</code> R package that implements each of the approaches evaluated here, and avoids many of the pitfalls encountered by prior implementations.</p>
+</section>
+<section id="spatialsample-and-the-tidymodels-framework" class="level1">
+<h1><code>spatialsample</code> and the tidymodels Framework</h1>
+<p>The tidymodels framework is a set of open-source packages for the R programming language that provide a consistent interface for common modeling tasks across a variety of model families and objectives following the same fundamental design principles as the tidyverse <span class="citation" data-cites="R tmwr wickham2019">(<a href="#ref-R" role="doc-biblioref">R Core Team 2022</a>; <a href="#ref-tmwr" role="doc-biblioref">Kuhn and Silge 2022</a>; <a href="#ref-wickham2019" role="doc-biblioref">Wickham et al. 2019</a>)</span>. These packages help users follow best practices while fitting and evaluating models, with functions and outputs that integrate well with the other packages in the tidymodels and tidyverse ecosystems as well as with the rest of the R modeling ecosystem. Historically, data splitting and CV in the tidymodels framework has been handled by the <code>rsample</code> package <span class="citation" data-cites="rsample">(<a href="#ref-rsample" role="doc-biblioref">Frick et al. 2022</a>)</span>, with additional components of the tidymodels ecosystem providing functionality for hyperparameter tuning and model evaluation <span class="citation" data-cites="tune dials">(<a href="#ref-tune" role="doc-biblioref">Kuhn 2022</a>; <a href="#ref-dials" role="doc-biblioref">Kuhn and Frick 2022</a>)</span>. However, <code>rsample</code> primarily focuses on randomized CV approaches, and as such it has historically been difficult to implement spatial CV approaches within the tidymodels framework.</p>
+<p>A new tidymodels package, <code>spatialsample</code>, addresses this gap by providing a suite of functions to implement the most popular spatial CV approaches. The resamples created by <code>spatialsample</code> rely on the same infrastructure as those created by <code>rsample</code>, and as such can make use of the same tidymodels packages for hyperparameter tuning and model evaluation. As an implementation of spatial CV methods, <code>spatialsample</code> improves on alternate implementations in R by relying on the <code>sf</code> and <code>s2</code> packages for calculating distance in geographic coordinate reference systems, improving the accuracy of distance calculations and CV fold assignments when working with geographic coordinates <span class="citation" data-cites="sf s2">(<a href="#ref-sf" role="doc-biblioref">Pebesma 2018</a>; <a href="#ref-s2" role="doc-biblioref">Dunnington, Pebesma, and Rubak 2021</a>)</span>. The <code>spatialsample</code> package is also able to appropriately handle data with coordinate reference systems that use linear units other than meters and to process user-provided parameters using any units understood by the <code>units</code> package <span class="citation" data-cites="units">(<a href="#ref-units" role="doc-biblioref">Pebesma, Mailund, and Hiebert 2016</a>)</span>. The <code>spatialsample</code> package also allows users to perform spatial CV procedures while modeling data with polygon geometries, such as those provided by the US Census Bureau. Distances between polygons are calculated between polygon edges, rather than centroids or other internal points, to ensure that adjacent polygons are handled appropriately by CV functions. Finally, <code>spatialsample</code> provides a standard interface to apply inclusion radii and exclusion buffers to all CV methodologies (<a href="#sec-overview">Section&nbsp;3</a>), providing a high degree of flexibility for specifying spatial CV patterns.</p>
+</section>
+<section id="sec-overview" class="level1">
+<h1>Resampling Methods</h1>
+<p>This paper evaluates a number of the most popular spatial CV approaches, based upon their prevalence across the literature and software implementations. We focus on CV methods which automatically split data either randomly or spatially but did not address any assessment methods that divide data based upon pre-specified, user-defined boundaries or predictor space. As such, we use “distance” and related terms to refer to spatial distances between observations, unless we specifically refer to “distance in predictor space”.</p>
+<section id="resubstitution" class="level2">
+<h2 class="anchored" data-anchor-id="resubstitution">Resubstitution</h2>
+<p>Evaluating a model’s performance when predicting the same data used to fit the model yields what is commonly known as the “apparent performance” or “resubstitution performance” of the model <span class="citation" data-cites="Kuhn2013">(<a href="#ref-Kuhn2013" role="doc-biblioref">Kuhn and Johnson 2013</a>)</span>. This procedure typically produces an overly-optimistic estimate of model performance, and as such is a poor method for estimating how well a model will generalize to new data <span class="citation" data-cites="efron1986 gong1986 efron1983">(<a href="#ref-efron1986" role="doc-biblioref">Efron 1986</a>; <a href="#ref-gong1986" role="doc-biblioref">Gong 1986</a>; <a href="#ref-efron1983" role="doc-biblioref">Efron and Gong 1983</a>)</span>. We include an assessment of resubstitution error in this study for comparison, but do not recommend it as an evaluation procedure in practice.</p>
+</section>
+<section id="randomized-v-fold-cv" class="level2">
+<h2 class="anchored" data-anchor-id="randomized-v-fold-cv">Randomized V-fold CV</h2>
+<p>Perhaps the most common approach to CV is V-fold CV, also known as k-fold CV. In this method, each observation is randomly assigned to one of <span class="math inline">\(v\)</span> folds. Models are then fit to each unique combination of <span class="math inline">\(v - 1\)</span> folds and evaluated against the remaining fold, with performance metrics estimated by averaging across the <span class="math inline">\(v\)</span> iterations <span class="citation" data-cites="Stone1974">(<a href="#ref-Stone1974" role="doc-biblioref">Stone 1974</a>)</span>. V-fold CV is generally believed to be the least biased of the dominant randomized CV approaches <span class="citation" data-cites="kuhn2019">(<a href="#ref-kuhn2019" role="doc-biblioref">Kuhn and Johnson 2019</a>)</span>, though research has suggested it overestimates model performance <span class="citation" data-cites="varma2006 Bates2021">(<a href="#ref-varma2006" role="doc-biblioref">Varma and Simon 2006</a>; <a href="#ref-Bates2021" role="doc-biblioref">Bates, Hastie, and Tibshirani 2021</a>)</span>. This optimistic bias is even more notable when training models using data with internal dependency structures, such as spatial structure <span class="citation" data-cites="Roberts2017">(<a href="#ref-Roberts2017" role="doc-biblioref">Roberts et al. 2017</a>)</span>.</p>
+<p>For this study, V-fold CV was performed using the <code>vfold_cv()</code> function in <code>rsample</code>.</p>
+</section>
+<section id="blocked-cv" class="level2">
+<h2 class="anchored" data-anchor-id="blocked-cv">Blocked CV</h2>
+<p>One of the most straightforward forms of spatial CV is to divide the study area into a set of polygons using a regular grid, with all observations inside a given polygon assigned to <span class="math inline">\(D_{\operatorname{out}}\)</span> as a group <span class="citation" data-cites="valavi2018 brenning2012 wenger2012">(<a href="#ref-valavi2018" role="doc-biblioref">Valavi et al. 2018</a>; <a href="#ref-brenning2012" role="doc-biblioref">Brenning 2012</a>; <a href="#ref-wenger2012" role="doc-biblioref">Wenger and Olden 2012</a>)</span>. This technique is known as “spatial blocking” <span class="citation" data-cites="Roberts2017">(<a href="#ref-Roberts2017" role="doc-biblioref">Roberts et al. 2017</a>)</span> or “spatial tiling” <span class="citation" data-cites="brenning2012">(<a href="#ref-brenning2012" role="doc-biblioref">Brenning 2012</a>)</span>. Frequently, each block is used as an independent <span class="math inline">\(D_{\operatorname{out}}\)</span> <span class="citation" data-cites="wenger2012">(leave-one-block-out CV, <a href="#ref-wenger2012" role="doc-biblioref">Wenger and Olden 2012</a>)</span>, though many implementations allow users to use fewer <span class="math inline">\(D_{\operatorname{out}}\)</span>, combining multiple blocks into sets either at random or via a systematic assignment approach <span class="citation" data-cites="valavi2018">(<a href="#ref-valavi2018" role="doc-biblioref">Valavi et al. 2018</a>)</span>. Spatial blocking attempts to address the limitations of randomized V-fold CV by introducing distance between <span class="math inline">\(D_{\operatorname{in}}\)</span> and <span class="math inline">\(D_{\operatorname{out}}\)</span>, though the distance from observations on the perimeter of a block to <span class="math inline">\(D_{\operatorname{in}}\)</span> will be much less than that from observations near the center of the block <span class="citation" data-cites="osullivan2010">(<a href="#ref-osullivan2010" role="doc-biblioref">O’Sullivan and Unwin 2010</a>)</span>. This disparity can be addressed through the use of an exclusion buffer around <span class="math inline">\(D_{\operatorname{out}}\)</span>, wherein points within a certain distance of <span class="math inline">\(D_{\operatorname{out}}\)</span> (depending on the implementation, calculated alternatively as distance from the polygon defining each block, the convex hull of points in <span class="math inline">\(D_{\operatorname{out}}\)</span>, or from each point in <span class="math inline">\(D_{\operatorname{out}}\)</span> independently) are excluded from both <span class="math inline">\(D_{\operatorname{out}}\)</span> and <span class="math inline">\(D_{\operatorname{in}}\)</span> <span class="citation" data-cites="valavi2018">(<a href="#ref-valavi2018" role="doc-biblioref">Valavi et al. 2018</a>)</span>.</p>
+<p>A challenge with spatial blocking is that dividing the study area using a standard grid often results in observations in unrelated areas being grouped together in a single fold, as regular gridlines likely will not align with relevant environmental features (for instance, blocks may span significant altitudinal gradients, or reach across a river to combine disjunct populations). Although this can be mitigated through careful parameterization of the grid, it is difficult to create meaningful <span class="math inline">\(D_{\operatorname{out}}\)</span> while still enforcing the required spatial separation between <span class="math inline">\(D_{\operatorname{in}}\)</span> and <span class="math inline">\(D_{\operatorname{out}}\)</span>.</p>
+<p>For this study, spatial blocking was performed using the <code>spatial_block_cv()</code> function in <code>spatialsample</code>. Each block was treated as a unique fold (leave-one-block-out CV).</p>
+</section>
+<section id="clustered-cv" class="level2">
+<h2 class="anchored" data-anchor-id="clustered-cv">Clustered CV</h2>
+<p>Another form of spatial CV involves grouping observations into a pre-specified number of clusters based on their spatial arrangement, and then treating each cluster as a <span class="math inline">\(D_{\operatorname{out}}\)</span> in V-fold CV <span class="citation" data-cites="brenning2012 walvoort2010">(<a href="#ref-brenning2012" role="doc-biblioref">Brenning 2012</a>; <a href="#ref-walvoort2010" role="doc-biblioref">Walvoort, Brus, and Gruijter 2010</a>)</span>. This approach allows for a great degree of flexibility, as alternative distance calculations and clustering algorithms may produce substantially different clusters. Similarly to spatially-blocked CV this approach may produce unbalanced <span class="math inline">\(D_{\operatorname{out}}\)</span> and folds that combine unrelated areas, though in practice most clustering algorithms typically produce more sensible fold boundaries than spatial blocking. Clustering is also similar to spatial blocking in that observations closer to the center of a cluster will be much further spatially separated from <span class="math inline">\(D_{\operatorname{in}}\)</span> than those near the perimeter, although clustering algorithms typically produce more circular tiles than blocking methods, and as such generally have fewer points along their perimeter overall. As with spatial blocking, exclusion buffers can be used to ensure a minimum distance between <span class="math inline">\(D_{\operatorname{in}}\)</span> and <span class="math inline">\(D_{\operatorname{out}}\)</span>.</p>
+<p>A notable difference between spatial clustering and spatial blocking is that, depending upon the algorithm used to assign data to clusters, cluster boundaries may be non-deterministic. This stochasticity means that repeated CV may be more meaningful with clustered CV than with spatial blocking, but also makes it difficult to ensure that cluster boundaries align with meaningful boundaries.</p>
+<p>For this study, spatial clustering was performed using the <code>spatial_clustering_cv()</code> function in <code>spatialsample</code>. Each cluster was treated as a unique fold (leave-one-cluster-out CV).</p>
+</section>
+<section id="buffered-leave-one-observation-out-cv-blo3-cv" class="level2">
+<h2 class="anchored" data-anchor-id="buffered-leave-one-observation-out-cv-blo3-cv">Buffered Leave-One-Observation-Out CV (BLO3 CV)</h2>
+<p>An alternative approach to spatial CV involves performing leave-one-out CV, a form of V-fold cross validation where <span class="math inline">\(v\)</span> is set to the number of observations such that each observation forms a separate <span class="math inline">\(D_{\operatorname{out}}\)</span>, with all points within a buffer distance of <span class="math inline">\(D_{\operatorname{out}}\)</span> omitted from <span class="math inline">\(D_{\operatorname{in}}\)</span> <span class="citation" data-cites="telford2009 pohjankukka2017">(<a href="#ref-telford2009" role="doc-biblioref">Telford and Birks 2009</a>; <a href="#ref-pohjankukka2017" role="doc-biblioref">Pohjankukka et al. 2017</a>)</span>. As the other methods investigated here are all examples of leave-one-group-out CV, with groups defined by spatial positions, we refer to this procedure as buffered leave-one-observation-out CV (BLO3 CV). This approach may be more robust to different parameterizations than spatial clustering or blocking, as the contents of a given <span class="math inline">\(D_{\operatorname{out}}\)</span> are not as dependent upon the precise locations of blocking polygons or cluster boundaries. Many studies have recommended buffered leave-one-out cross validation for models fit using spatial data, with the size of the exclusion buffer variously determined by variogram ranges for model predictors, model outcomes, or model residuals <span class="citation" data-cites="lerest2014 Roberts2017 telford2009 valavi2018 karasiak2021">(<a href="#ref-lerest2014" role="doc-biblioref">Le Rest et al. 2014</a>; <a href="#ref-Roberts2017" role="doc-biblioref">Roberts et al. 2017</a>; <a href="#ref-telford2009" role="doc-biblioref">Telford and Birks 2009</a>; <a href="#ref-valavi2018" role="doc-biblioref">Valavi et al. 2018</a>; <a href="#ref-karasiak2021" role="doc-biblioref">Karasiak et al. 2021</a>)</span>.</p>
+<p>For this study, BLO3 CV was performed using the <code>spatial_buffer_vfold_cv()</code> function in <code>spatialsample</code>.</p>
+</section>
+<section id="leave-one-disc-out-cv-lodo-cv" class="level2">
+<h2 class="anchored" data-anchor-id="leave-one-disc-out-cv-lodo-cv">Leave-One-Disc-Out CV (LODO CV)</h2>
+<p>The final spatial CV method investigated here is leave-one-disc-out CV, following <span class="citation" data-cites="brenning2012">Brenning (<a href="#ref-brenning2012" role="doc-biblioref">2012</a>)</span>. This method extends BLO3 by adding all points within a certain radius of each observation to <span class="math inline">\(D_{\operatorname{out}}\)</span>, increasing the size of the final <span class="math inline">\(D_{\operatorname{out}}\)</span>. Data points falling within the exclusion buffer of any observation in <span class="math inline">\(D_{\operatorname{out}}\)</span>, including those added by the inclusion radius, is then removed from <span class="math inline">\(D_{\operatorname{out}}\)</span> (<a href="#fig-maps">Figure&nbsp;1</a>). Similarly to blocked and clustered CV, LODO CV evaluates models against multiple <span class="math inline">\(D_{\operatorname{out}}\)</span> of spatially conjunct observations. Similar to BLO3 CV, LODO CV approach may be more robust to different parameter values than methods assigning <span class="math inline">\(D_{\operatorname{out}}\)</span> based upon blocking polygons or cluster boundaries. Unlike any of the other approaches investigated, observations may appear in multiple <span class="math inline">\(D_{\operatorname{out}}\)</span>, with observations in more intensively sampled regions being selected more often.</p>
+<p>In this study, spatial leave-one-disc-out CV was performed using the <code>spatial_buffer_vfold_cv()</code> function in <code>spatialsample</code>. An important feature of this implementation of leave-disc-out CV is that the exclusion buffer is calculated separately for each point in <span class="math inline">\(D_{\operatorname{out}}\)</span>. Where other implementations remove all observations within the buffer distance of the inclusion radius to create a uniform “doughnut” shaped buffer, <code>spatialsample</code> only removes observations that are within the buffer distance of data in <span class="math inline">\(D_{\operatorname{out}}\)</span>, potentially retaining more data in <span class="math inline">\(D_{\operatorname{in}}\)</span> by creating an irregular buffer polygon.</p>
+</section>
+</section>
+<section id="sec-methods" class="level1">
+<h1>Methods</h1>
+<section id="sec-simulation" class="level2">
+<h2 class="anchored" data-anchor-id="sec-simulation">Landscape Simulation</h2>
+<p>To compare the validation techniques described above, we extended the simulation approach used by Roberts et al. <span class="citation" data-cites="Roberts2017">(<a href="#ref-Roberts2017" role="doc-biblioref">2017</a>, Box 1)</span>. We simulated 100 landscapes, representing independent realizations of the same data-generating process, generating a set of 13 variables calculated using the same stochastic formulations across a regularly spaced 50 x 50 cell grid, for a total of 2,500 cells per landscape (<a href="#tbl-simulations">Table&nbsp;1</a>). Simulated predictors included eight random Gaussian fields, generated using the <code>RandomFields</code> R package <span class="citation" data-cites="RandomFields">(<a href="#ref-RandomFields" role="doc-biblioref">Schlather et al. 2015</a>)</span>, which uses stationary isotropic covariance models to generate spatially structured variables. Five additional variables were calculated as combinations of the randomly generated variables to imitate interactions between environmental variables. This simulation approach was originally designed to resemble the environmental data that might be used to model species abundance and distribution; further interpretation of what each predictor represents is provided in Appendix 2 of <span class="citation" data-cites="Roberts2017">Roberts et al. (<a href="#ref-Roberts2017" role="doc-biblioref">2017</a>)</span>.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="tbl-simulations" class="anchored">
+
+<table class="table" style="margin-left: auto; margin-right: auto;"><caption>Table&nbsp;1:  Simulated predictors generated for each independent landscape, created following Roberts et al. 2017. Predictors are indicated as being used for y if they were included either in Equation 1 or used to calculate variables included in Equation 1. Predictors are indicated as being used in models if they were used as predictors in random forest models. </caption>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Name </th>
+   <th style="text-align:left;"> Variable Definition </th>
+   <th style="text-align:left;"> Used for $y$? </th>
+   <th style="text-align:left;"> Used in model? </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> X1 </td>
+   <td style="text-align:left;width: 20em; "> Random Gaussian field with exponential covariance (variance = 0.1, scale = 0.1) </td>
+   <td style="text-align:left;"> Yes </td>
+   <td style="text-align:left;width: 5em; "> No </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X2 </td>
+   <td style="text-align:left;width: 20em; "> Random Gaussian field with exponential covariance (variance = 0.3, scale = 0.1) </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;width: 5em; "> Yes </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X3 </td>
+   <td style="text-align:left;width: 20em; "> Random Gaussian field with Gaussian covariance (variance = 0.1, scale = 0.3) </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;width: 5em; "> Yes </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X4 </td>
+   <td style="text-align:left;width: 20em; "> If the ratio (X2 / X3) is above the 95th percentile of all values, 0; else 1. </td>
+   <td style="text-align:left;"> Yes (excluding) </td>
+   <td style="text-align:left;width: 5em; "> No </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X5 </td>
+   <td style="text-align:left;width: 20em; "> X1 + X2 + X3 + (X2 $\cdot$ X3) </td>
+   <td style="text-align:left;"> Yes </td>
+   <td style="text-align:left;width: 5em; "> No </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X6 </td>
+   <td style="text-align:left;width: 20em; "> Random Gaussian field with exponential covariance (variance = 0.1, scale = 0.1) </td>
+   <td style="text-align:left;"> Yes </td>
+   <td style="text-align:left;width: 5em; "> Yes </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X7 </td>
+   <td style="text-align:left;width: 20em; "> Random Gaussian field with exponential covariance (variance = 0.1, scale = 0.1) </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;width: 5em; "> Yes </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X8 </td>
+   <td style="text-align:left;width: 20em; "> Random Gaussian field with exponential covariance (variance = 0.1, scale = 0.1) </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;width: 5em; "> Yes </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X9 </td>
+   <td style="text-align:left;width: 20em; "> Random Gaussian field with Gaussian covariance (variance = 0.1, scale = 0.3) </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;width: 5em; "> Yes </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X10 </td>
+   <td style="text-align:left;width: 20em; "> Random Gaussian field with Gaussian covariance (variance = 0.1, scale = 0.3) </td>
+   <td style="text-align:left;"> No </td>
+   <td style="text-align:left;width: 5em; "> Yes </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X11 </td>
+   <td style="text-align:left;width: 20em; "> X2/X3 </td>
+   <td style="text-align:left;"> Yes (limiting) </td>
+   <td style="text-align:left;width: 5em; "> No </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X12 </td>
+   <td style="text-align:left;width: 20em; "> $1 / (\operatorname{sqrt}(2\cdot\pi))\cdot\exp-(\operatorname{X3}^2/4)$ </td>
+   <td style="text-align:left;"> Yes </td>
+   <td style="text-align:left;width: 5em; "> No </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> X13 </td>
+   <td style="text-align:left;width: 20em; "> $1 / (\operatorname{sqrt}(2\cdot\pi))\cdot\exp-(\operatorname{X2}^2/4)$ </td>
+   <td style="text-align:left;"> Yes </td>
+   <td style="text-align:left;width: 5em; "> No </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<p>These predictors were then used to generate a target variable <span class="math inline">\(y\)</span> using <a href="#eq-y">Equation&nbsp;1</a>.</p>
+<p><span id="eq-y"><span class="math display">\[
+y =
+\left\{
+    \begin{array}{lr}
+        \min(y), &amp; \text{if } \operatorname{X4} \neq 0\\
+        \operatorname{X11}, &amp; \text{if } y\geq \operatorname{X11}\\
+        \operatorname{X1} + \operatorname{X5} + \operatorname{X6} + \operatorname{X12} + \operatorname{X13}, &amp; \text{otherwise }
+    \end{array}
+\right\}
+\tag{1}\]</span></span></p>
+<p>One instance of the spatially clustered <span class="math inline">\(y\)</span> values produced by this process is visualized in <a href="#fig-maps">Figure&nbsp;1</a>.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-maps" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="paper_files/figure-html/fig-maps-1.png" class="img-fluid figure-img" width="8976"></p>
+<p></p><figcaption class="figure-caption">Figure&nbsp;1: One simulation of the dependent variable <span class="math inline">\(y\)</span> and several of the CV approaches used. A: Simulated data showing environmental clustering of a variable of interest, named “Target”, in one simulated landscape. B: Spatial clustering CV fold assignments, as produced by <code>spatial_clustering_cv()</code>, based upon using k-means clustering to group observations spatially. C: Spatially blocked CV fold assignments, produced using <code>spatial_block_cv()</code> to group observations spatially. D: A single fold of LODO CV, showing <span class="math inline">\(D_{\operatorname{in}}\)</span> and <span class="math inline">\(D_{\operatorname{out}}\)</span> as well as the exclusion buffer, performed using <code>spatial_buffer_vfold_cv()</code> with a radius and buffer covering 10% of the mapped area. Points within the inclusion radius of the randomly selected observation are included in <span class="math inline">\(D_{\operatorname{out}}\)</span>, while points within the exclusion buffer of <span class="math inline">\(D_{\operatorname{out}}\)</span> are not included in either set. For BLO3 and LODO CV, this procedure is repeated for each grid cell.</figcaption><p></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Models were then fit using variables X2, X3, and X6 - X10. Of these seven variables, three were involved in calculating the target variable <span class="math inline">\(y\)</span> (X2 and X3, as components of X4 and X5; and X6, used directly) and therefore provide useful information for models, while the remaining four (X7 - X10) were included to allow overfitting.</p>
+</section>
+<section id="sec-resampling" class="level2">
+<h2 class="anchored" data-anchor-id="sec-resampling">Resampling Methodology</h2>
+<p>We divided each simulated landscape into folds using each of the data splitting approaches (<a href="#sec-overview">Section&nbsp;3</a>) across a wide range of parameter sets (<a href="#tbl-whichparams">Table&nbsp;2</a>; <a href="#tbl-paramdefs">Table&nbsp;3</a>) in order to evaluate the usefulness of spatial CV approaches. Spatial blocking, spatial clustering, and leave-one-disc-out used a “leave-one-group-out” approach, where each <span class="math inline">\(D_{\operatorname{out}}\)</span> was made up of a single block or cluster of observations, with all other data (excluding any within the exclusion buffer) used as <span class="math inline">\(D_{\operatorname{in}}\)</span>. BLO3 used a leave-one-observation-out approach. We additionally evaluated spatial blocking with fewer <span class="math inline">\(D_{\operatorname{out}}\)</span> than blocks, resulting in multiple blocks being used in each <span class="math inline">\(D_{\operatorname{out}}\)</span>. Each simulated landscape was resampled independently, meaning that stochastic methods (such as V-fold CV and spatial clustering) produced different CV folds across each simulation. All resampling used functions implemented in the <code>rsample</code> and <code>spatialsample</code> packages <span class="citation" data-cites="rsample spatialsample">(<a href="#ref-rsample" role="doc-biblioref">Frick et al. 2022</a>; <a href="#ref-spatialsample" role="doc-biblioref">Mahoney and Silge 2022</a>)</span>. Examples of spatial clustering CV, spatially blocked CV, and leave-one-disc-out CV are visualized in <a href="#fig-maps">Figure&nbsp;1</a>.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="tbl-whichparams" class="anchored">
+
+<table class="table" style="margin-left: auto; margin-right: auto;"><caption>Table&nbsp;2:  Parameters applied to each CV method assessed, and the number of iterations performed. 100 iterations were performed per unique combination of parameters. </caption>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> CV Method </th>
+   <th style="text-align:left;"> Resampling function </th>
+   <th style="text-align:left;"> Parameters </th>
+   <th style="text-align:right;"> # of iterations </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> Resubstitution </td>
+   <td style="text-align:left;font-family: monospace;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 100 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> V-fold </td>
+   <td style="text-align:left;font-family: monospace;"> vfold_cv() </td>
+   <td style="text-align:left;"> V </td>
+   <td style="text-align:right;"> 400 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Blocked </td>
+   <td style="text-align:left;font-family: monospace;"> spatial_block_cv() </td>
+   <td style="text-align:left;"> Block size, Buffer </td>
+   <td style="text-align:right;"> 8800 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Clustered </td>
+   <td style="text-align:left;font-family: monospace;"> spatial_clustering_cv() </td>
+   <td style="text-align:left;"> V, Buffer, Cluster function </td>
+   <td style="text-align:right;"> 8800 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> BLO3 </td>
+   <td style="text-align:left;font-family: monospace;"> spatial_buffer_vfold_cv() </td>
+   <td style="text-align:left;"> Buffer </td>
+   <td style="text-align:right;"> 1700 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> LODO </td>
+   <td style="text-align:left;font-family: monospace;"> spatial_buffer_vfold_cv() </td>
+   <td style="text-align:left;"> Buffer, Radius </td>
+   <td style="text-align:right;"> 11100 </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div id="tbl-paramdefs" class="anchored">
+
+<table class="table" style="margin-left: auto; margin-right: auto;"><caption>Table&nbsp;3:  Definitions of parameters applied to CV methods. </caption>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Parameter </th>
+   <th style="text-align:left;"> Values </th>
+   <th style="text-align:left;"> Definition </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> V </td>
+   <td style="text-align:left;width: 15em; "> 2, 5, 10, 20; 2, 4, 9, 16, 25, 36, 64, 100 </td>
+   <td style="text-align:left;width: 20em; "> The number of folds to assign data into. Each fold was used as $D_{\operatorname{out}}$ precisely once. The first set of values were used for spatial clustering, while the second was used for spatial blocking. For spatial clustering, this controls the number of clusters. </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Cluster function </td>
+   <td style="text-align:left;width: 15em; "> K-means, Hierarchical </td>
+   <td style="text-align:left;width: 20em; "> The algorithm used to cluster observations into folds. </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Block size </td>
+   <td style="text-align:left;width: 15em; "> 1/100, 1/64, 1/36, 1/25, 1/16, 1/9, 1/4, 1/2 </td>
+   <td style="text-align:left;width: 20em; "> The proportion of the grid each block should occupy (such that 1/2 creates two blocks, each occupying half the grid). </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Blocking method </td>
+   <td style="text-align:left;width: 15em; "> Random, Systematic (continuous), Systematic (snake) </td>
+   <td style="text-align:left;width: 20em; "> For spatial blocking, the method for assigning blocks to folds: randomly ('random'), in a 'scanline' moving left to right across each row of the grid ('systematic (continuous)'), or moving back and forth across the rows of the grid ('systematic (snake)'). </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Buffer </td>
+   <td style="text-align:left;width: 15em; "> 0.00, 0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, 0.24, 0.27, 0.30, 0.33, 0.36, 0.39, 0.42, 0.45, 0.48 </td>
+   <td style="text-align:left;width: 20em; "> The size of the exclusion buffer to apply around $D_{\operatorname{out}}$, expressed as a proportion of the side length of the grid. Observations within this distance of any point in $D_{\operatorname{out}}$ are included in neither $D_{\operatorname{in}}$ nor $D_{\operatorname{out}}$. Buffer distances above 0.3 were only used for BLO3 CV, as increased buffer distances around larger $D_{\operatorname{out}}$ may produce empty $D_{\operatorname{in}}$. </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Radius </td>
+   <td style="text-align:left;width: 15em; "> 0.00, 0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, 0.24, 0.27, 0.30 </td>
+   <td style="text-align:left;width: 20em; "> The size of the inclusion radius to apply around $D_{\operatorname{out}}$, expressed as a proportion of the side length of the grid. Observations within this distance of any point in $D_{\operatorname{out}}$ are moved from $D_{\operatorname{in}}$ into $D_{\operatorname{out}}$. </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+</section>
+<section id="sec-models" class="level2">
+<h2 class="anchored" data-anchor-id="sec-models">Model Fitting and Evaluation</h2>
+<p>For each iteration, we modeled the target variable <span class="math inline">\(y\)</span> using random forests as implemented in the <code>ranger</code> R package <span class="citation" data-cites="Breiman2001 ranger">(<a href="#ref-Breiman2001" role="doc-biblioref">Breiman 2001</a>; <a href="#ref-ranger" role="doc-biblioref">Wright and Ziegler 2017</a>)</span>, fit using variables X2, X3, and X6 - X10. Random forests generally provide high predictive accuracy even without hyperparameter tuning <span class="citation" data-cites="Probst2018">(<a href="#ref-Probst2018" role="doc-biblioref">Probst, Bischl, and Boulesteix 2018</a>)</span>, and as such all random forests were fit using the default hyperparameter settings of the <code>ranger</code> package, namely 500 decision trees, a minimum of 5 observations per leaf node, and two variables to split on per node.</p>
+<p>Model accuracy was measured using root-mean-squared error (RMSE, <a href="#eq-rmse">Equation&nbsp;2</a>). To find the “ideal” error rate that we would expect CV approaches to estimate, we fit 100 separate random forest models, each trained using all values within one of the 100 simulated landscapes. We then calculated the RMSE for each of these models when used to predict each of the 99 other landscapes. As each landscape is an independent realization of the same data-generation process, the relationships between predictors and <span class="math inline">\(y\)</span> is identical across landscapes, although the spatial relationships between <span class="math inline">\(y\)</span> and variables not used to generate <span class="math inline">\(y\)</span> are likely different across iterations. As such, RMSE values from a model trained on one landscape and used to predict the others represent the ability of the model to predict <span class="math inline">\(y\)</span> based upon the predictors and without relying upon spatial structure. These RMSE estimates therefore represent the “true” range of RMSE values when using these models for spatial extrapolation to areas with the same relationship between predictors and the target feature, but without any spatial correlation to the training data itself. We defined the success of model evaluation methods as the proportion of iterations which returned RMSE estimates between the 5th and 9th percentile RMSEs of this “ideal” estimation procedure.</p>
+<p>To find the error rate of the resubstitution approach, we fit 100 random forests, one to each landscape, and then calculated the RMSE for each model when used to predict its own training data. To find the error of each CV approach, we first used each CV approach to separate each landscape into <span class="math inline">\(n\)</span> folds (<a href="#sec-resampling">Section&nbsp;4.2</a>). We then fit models to each combination of <span class="math inline">\(n - 1\)</span> of these folds, and calculated RMSE when using the model to predict the remaining <span class="math inline">\(D_{\operatorname{out}}\)</span> (<a href="#eq-rmse">Equation&nbsp;2</a>).</p>
+<p><span id="eq-rmse"><span class="math display">\[
+\operatorname{RMSE} = \sqrt{(\frac{1}{n})\sum_{i=1}^{n}(y_{i} - \hat{y_{i}})^{2}}
+\tag{2}\]</span></span></p>
+<p>We then calculated the variance of the RMSE estimates of each method across the 100 simulated landscapes, as well as the proportion of runs for each method which fell between the 5th and 95th percentiles of the “true” RMSE range.</p>
+<p>Based upon prior research, we expected the optimal spacing between <span class="math inline">\(D_{\operatorname{in}}\)</span> and <span class="math inline">\(D_{\operatorname{out}}\)</span> to be related to the range of spatial dependence either in the outcome variable or in model residuals <span class="citation" data-cites="lerest2014 Roberts2017 telford2009">(<a href="#ref-lerest2014" role="doc-biblioref">Le Rest et al. 2014</a>; <a href="#ref-Roberts2017" role="doc-biblioref">Roberts et al. 2017</a>; <a href="#ref-telford2009" role="doc-biblioref">Telford and Birks 2009</a>)</span>. As such, we quantified the range of spatial autocorrelation in both the target variable <span class="math inline">\(y\)</span> and in resubstitution residuals from random forest models using the automated variogram fitting approach implemented in the <code>automap</code> R package <span class="citation" data-cites="automap">(<a href="#ref-automap" role="doc-biblioref">Hiemstra et al. 2008</a>)</span>.</p>
+</section>
+</section>
+<section id="sec-results" class="level1">
+<h1>Results and Discussion</h1>
+<section id="spatial-cv-improves-model-performance-estimates" class="level2">
+<h2 class="anchored" data-anchor-id="spatial-cv-improves-model-performance-estimates">Spatial CV Improves Model Performance Estimates</h2>
+<p>Spatial cross-validation methods consistently produced more accurate estimates of model performance than non-spatial methods, which were optimistically biased (producing too-low estimates of RMSE) (<a href="#tbl-overall">Table&nbsp;4</a>; <a href="#fig-comparisons">Figure&nbsp;2</a>). CV produced the best estimates when <span class="math inline">\(D_{\operatorname{out}}\)</span> of spatially conjunct observations were combined with exclusion buffers (<a href="#tbl-winners">Table&nbsp;5</a>). Spatially clustered CV and LODO, both of which enforce <span class="math inline">\(D_{\operatorname{out}}\)</span> of spatially conjunct observations, were among the most consistently effective CV methods (<a href="#fig-comparisons">Figure&nbsp;2</a>). Removing too much data from <span class="math inline">\(D_{\operatorname{in}}\)</span>, such as by clustering with only two folds or blocking with only two blocks resulted in pessimistic over-estimates of RMSE (<a href="#fig-rmse-delta">Figure&nbsp;3</a>).</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="tbl-overall" class="anchored">
+
+<table class="table" style="margin-left: auto; margin-right: auto;"><caption>Table&nbsp;4:  Mean RMSE estimates across all evaluated parameterizations of cross-validation strategies. Numbers in parentheses represent standard deviations. “% within target RMSE range” refers to the percentage of iterations which had RMSE estimates between the 5th and 95th percentile estimates from the true RMSE estimation procedure. </caption>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Method </th>
+   <th style="text-align:left;"> RMSE </th>
+   <th style="text-align:left;"> % within target RMSE range </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> Ideal RMSE </td>
+   <td style="text-align:left;"> 0.715 (0.042) </td>
+   <td style="text-align:left;width: 7em; "> 90.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Clustered </td>
+   <td style="text-align:left;"> 0.743 (0.161) </td>
+   <td style="text-align:left;width: 7em; "> 36.97% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> LODO </td>
+   <td style="text-align:left;"> 0.641 (0.135) </td>
+   <td style="text-align:left;width: 7em; "> 31.70% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Blocked </td>
+   <td style="text-align:left;"> 0.664 (0.159) </td>
+   <td style="text-align:left;width: 7em; "> 27.90% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> V-fold </td>
+   <td style="text-align:left;"> 0.440 (0.076) </td>
+   <td style="text-align:left;width: 7em; "> 2.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> BLO3CV </td>
+   <td style="text-align:left;"> 0.429 (0.098) </td>
+   <td style="text-align:left;width: 7em; "> 1.29% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Resubstitution </td>
+   <td style="text-align:left;"> 0.189 (0.032) </td>
+   <td style="text-align:left;width: 7em; "> 0.00% </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-comparisons" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="paper_files/figure-html/fig-comparisons-1.png" class="img-fluid figure-img" width="8976"></p>
+<p></p><figcaption class="figure-caption">Figure&nbsp;2: RMSE distributions of each spatial CV method evaluated. The x axis represents the distance of an RMSE from the mean “true” RMSE values, such that negative values underpredict the true RMSE and positive values overpredict it. Distributions are scaled relative to the number of iterations run, such that a unit area represents the same number of iterations across each method, but not necessarily the same proportion of all iterations evaluated. The green rectangle represents the 90% interval of true RMSE values used as the “target” RMSE range.</figcaption><p></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div id="tbl-winners" class="anchored">
+
+<table class="table" style="margin-left: auto; margin-right: auto;"><caption>Table&nbsp;5:  Mean RMSE estimates across 100 iterations of various cross-validation strategies (bold headers) for the parameterizations producing the most accurate model performance estimates. Numbers in parentheses represent standard deviations. “% within target RMSE range” refers to the percentage of iterations which had RMSE estimates between the 5th and 95th percentile estimates from the true RMSE estimation procedure. </caption>
+ <thead>
+  <tr>
+   <th style="text-align:right;"> V </th>
+   <th style="text-align:left;"> Cell size </th>
+   <th style="text-align:left;"> Cluster function </th>
+   <th style="text-align:right;"> Exclusion buffer </th>
+   <th style="text-align:right;"> Inclusion radius </th>
+   <th style="text-align:left;"> RMSE </th>
+   <th style="text-align:left;"> % within target RMSE range </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr grouplength="1"><td colspan="7" style="border-bottom: 1px solid;"><strong>Ideal RMSE</strong></td></tr>
+<tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.715 (0.042) </td>
+   <td style="text-align:left;width: 7em; "> 90.00% </td>
+  </tr>
+  <tr grouplength="3"><td colspan="7" style="border-bottom: 1px solid;"><strong>Clustered</strong></td></tr>
+<tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1"> 10 </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> kmeans </td>
+   <td style="text-align:right;"> 0.15 </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.694 (0.087) </td>
+   <td style="text-align:left;width: 7em; "> 60.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1"> 5 </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> kmeans </td>
+   <td style="text-align:right;"> 0.09 </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.723 (0.099) </td>
+   <td style="text-align:left;width: 7em; "> 59.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1"> 10 </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> kmeans </td>
+   <td style="text-align:right;"> 0.18 </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.712 (0.094) </td>
+   <td style="text-align:left;width: 7em; "> 59.00% </td>
+  </tr>
+  <tr grouplength="3"><td colspan="7" style="border-bottom: 1px solid;"><strong>LODO</strong></td></tr>
+<tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 0.18 </td>
+   <td style="text-align:right;"> 0.21 </td>
+   <td style="text-align:left;"> 0.718 (0.095) </td>
+   <td style="text-align:left;width: 7em; "> 60.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 0.12 </td>
+   <td style="text-align:right;"> 0.24 </td>
+   <td style="text-align:left;"> 0.703 (0.093) </td>
+   <td style="text-align:left;width: 7em; "> 59.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 0.12 </td>
+   <td style="text-align:right;"> 0.27 </td>
+   <td style="text-align:left;"> 0.725 (0.098) </td>
+   <td style="text-align:left;width: 7em; "> 59.00% </td>
+  </tr>
+  <tr grouplength="3"><td colspan="7" style="border-bottom: 1px solid;"><strong>Blocked</strong></td></tr>
+<tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;"> 1/9 </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 0.24 </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.738 (0.099) </td>
+   <td style="text-align:left;width: 7em; "> 61.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;"> 1/9 </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 0.21 </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.732 (0.100) </td>
+   <td style="text-align:left;width: 7em; "> 60.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;"> 1/25 </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 0.27 </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.688 (0.084) </td>
+   <td style="text-align:left;width: 7em; "> 58.00% </td>
+  </tr>
+  <tr grouplength="3"><td colspan="7" style="border-bottom: 1px solid;"><strong>V-fold</strong></td></tr>
+<tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1"> 2 </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.475 (0.079) </td>
+   <td style="text-align:left;width: 7em; "> 2.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1"> 5 </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.438 (0.073) </td>
+   <td style="text-align:left;width: 7em; "> 2.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1"> 10 </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.428 (0.071) </td>
+   <td style="text-align:left;width: 7em; "> 2.00% </td>
+  </tr>
+  <tr grouplength="3"><td colspan="7" style="border-bottom: 1px solid;"><strong>BLO3</strong></td></tr>
+<tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 0.48 </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.524 (0.070) </td>
+   <td style="text-align:left;width: 7em; "> 7.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 0.45 </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.516 (0.069) </td>
+   <td style="text-align:left;width: 7em; "> 4.00% </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;"> 0.42 </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.508 (0.067) </td>
+   <td style="text-align:left;width: 7em; "> 3.00% </td>
+  </tr>
+  <tr grouplength="1"><td colspan="7" style="border-bottom: 1px solid;"><strong>Resubstitution</strong></td></tr>
+<tr>
+   <td style="text-align:right;padding-left: 2em;" indentlevel="1">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:right;">  </td>
+   <td style="text-align:left;"> 0.189 (0.032) </td>
+   <td style="text-align:left;width: 7em; "> 0.00% </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-rmse-delta" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="paper_files/figure-html/fig-rmse-delta-1.png" class="img-fluid figure-img" width="8976"></p>
+<p></p><figcaption class="figure-caption">Figure&nbsp;3: Spatial CV RMSE estimates under various parameterizations. Colors represent the distance of an RMSE from the mean “true” RMSE values, such that negative values underpredict the true RMSE and positive values overpredict it. A: Spatial clustering RMSE estimates using different numbers of clusters (“V”) and different sizes of exclusion buffers (“Buffer”). B: Spatial blocking RMSE estimates using different sizes of blocks (“Cell Size”; a cell size of “1/2” implies two blocks, each containing half the study area) and different sizes of exclusion buffers (“Buffer”). C: LODO RMSE estimates using different sizes of inclusion radii (“Radius”) and different sizes of exclusion buffers (“Buffer”). D: BLO3 RMSE estimates using different sizes of exclusion buffers (“Buffer”).</figcaption><p></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The best parameter sets for CV methods consistently separated the center of <span class="math inline">\(D_{\operatorname{out}}\)</span> from <span class="math inline">\(D_{\operatorname{in}}\)</span> by 25%-41% of the grid length (Clustering 25%-29%; LODO 36%-39%; Blocked 32%-41%; BLO3 24%-30%). Given that the target variable had a mean autocorrelation range of 24.61% of the grid length (<a href="#fig-ranges">Figure&nbsp;4</a>), this suggests that spatial cross-validation approaches produce the best estimates of model performance when <span class="math inline">\(D_{\operatorname{out}}\)</span> is sufficiently separated from <span class="math inline">\(D_{\operatorname{in}}\)</span> such that there is no spatial dependency in the outcome variable between the two sets.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-ranges" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="paper_files/figure-html/fig-ranges-1.png" class="img-fluid figure-img" width="8976"></p>
+<p></p><figcaption class="figure-caption">Figure&nbsp;4: Autocorrelation range distributions for the outcome variable and resubstitution model residuals, used throughout the literature to identify target distances to separate <span class="math inline">\(D_{\operatorname{out}}\)</span> and <span class="math inline">\(D_{\operatorname{in}}\)</span>. Units are as a proportion of the side length of the grid. Ranges were determined via empirical variogram. Each point represents one iteration of the simulation process, while “clouds” represent the matching probability density function. Black points represent the median autocorrelation range, while the black bar represents the interquartile range and 95% interval.</figcaption><p></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Clustering appeared to be the spatial CV method most robust to different parameterizations (<a href="#fig-comparisons">Figure&nbsp;2</a>; <a href="#fig-rmse-delta">Figure&nbsp;3</a>), with the highest proportion of all iterations within the target RMSE range (Clustered 36.97% of all iterations; LODO 31.70%; Blocked 27.90%; BLO3 ) (<a href="#fig-rmse-prop">Figure&nbsp;5</a>). This may, however, simply reflect the relatively narrow range of parameters evaluated with clustering, as both blocking and LODO had a wide range of parameters which returned estimates within the target range at least half the time (<a href="#fig-rmse-prop">Figure&nbsp;5</a>). While BLO3 exhibited increasing RMSE with increasing buffer radii (<a href="#fig-rmse-delta">Figure&nbsp;3</a>), as frequently reported in the literature, we found it only rarely produced RMSE estimates within the target range (<a href="#fig-rmse-prop">Figure&nbsp;5</a>).</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-rmse-prop" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="paper_files/figure-html/fig-rmse-prop-1.png" class="img-fluid figure-img" width="8976"></p>
+<p></p><figcaption class="figure-caption">Figure&nbsp;5: Percentage of RMSE estimates within the target range (the 90% interval of true RMSE values) from spatial CV methods under various parameterizations. A: Spatial clustering using different numbers of clusters (“V”) and different sizes of exclusion buffers (“Buffer”). B: Spatial blocking using different sizes of blocks (“Cell Size”; a cell size of “1/2” implies two blocks, each containing half the study area) and different sizes of exclusion buffers (“Buffer”). C: LODO using different sizes of inclusion radii (“Radius”) and different sizes of exclusion buffers (“Buffer”). D: BLO3 using different sizes of exclusion buffers (“Buffer”).</figcaption><p></p>
+</figure>
+</div>
+</div>
+</div>
+<p>RMSE estimates from spatial blocking were inversely related to the number of <span class="math inline">\(D_{\operatorname{out}}\)</span> used, likely due to the distance between <span class="math inline">\(D_{\operatorname{out}}\)</span> and <span class="math inline">\(D_{\operatorname{in}}\)</span> increasing if adjacent blocks were assigned to the same <span class="math inline">\(D_{\operatorname{out}}\)</span> (<a href="#fig-blocks-with-v">Figure&nbsp;6</a>). RMSE estimates generally increased gradually as the number of <span class="math inline">\(D_{\operatorname{out}}\)</span> decreased, though notable increases were observed when blocks were assigned via the continuous systematic method and the number of cells in each grid row were evenly divisible by the number of <span class="math inline">\(D_{\operatorname{out}}\)</span> (e.g., when 1/16th cell sizes produced by a 4-by-4 grid were divided into 4 folds). In these situations, each column of the grid will be entirely assigned to the same <span class="math inline">\(D_{\operatorname{out}}\)</span>, somewhat resembling the CV method of <span class="citation" data-cites="wenger2012">Wenger and Olden (<a href="#ref-wenger2012" role="doc-biblioref">2012</a>)</span>, producing <span class="math inline">\(D_{\operatorname{out}}\)</span> which have no neighboring <span class="math inline">\(D_{\operatorname{in}}\)</span> observations in the <em>y</em> direction and therefore a greater average distance between <span class="math inline">\(D_{\operatorname{out}}\)</span> and <span class="math inline">\(D_{\operatorname{in}}\)</span>. Overall, these results suggest that using fewer <span class="math inline">\(D_{\operatorname{out}}\)</span> than blocks may be appropriate when the range of autocorrelation in the outcome variable is relatively small and there is concern about large blocks restricting predictor space <span class="citation" data-cites="Roberts2017">(<a href="#ref-Roberts2017" role="doc-biblioref">Roberts et al. 2017</a>)</span>; however, with longer autocorrelation ranges it is likely best to use a leave-one-block-out approach with fewer, larger blocks.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-blocks-with-v" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="paper_files/figure-html/fig-blocks-with-v-1.png" class="img-fluid figure-img" width="8976"></p>
+<p></p><figcaption class="figure-caption">Figure&nbsp;6: RMSE estimates from spatially blocked CV with various block sizes assigned to various numbers of <span class="math inline">\(D_{\operatorname{out}}\)</span>. A: Spatial CV RMSE estimates under various parameterizations. Colors represent the distance of an RMSE from the mean “true” RMSE values, such that negative values underpredict the true RMSE and positive values overpredict it. B: Percentage of RMSE estimates within the target range (the 90% interval of true RMSE values). Labels above each panel refer to the method for assigning blocks to folds: either random assignment, systematically with each row assigned from left to right (“continuous”), or systematically with each row assigned in a “snaking” pattern (first row left to right, next row right to left, then repeating).</figcaption><p></p>
+</figure>
+</div>
+</div>
+</div>
+<p>As such, the recommendations from this study are clear: CV-based performance assessments of models fit using spatial data benefit from spatial CV approaches. Those spatial CV approaches are most likely to return good estimates of true model accuracy if they combine <span class="math inline">\(D_{\operatorname{out}}\)</span> of spatially conjunct observations with exclusion buffers, such that the average observation is separated from <span class="math inline">\(D_{\operatorname{in}}\)</span> by enough distance that there is no spatial dependency in the outcome variable between <span class="math inline">\(D_{\operatorname{in}}\)</span> and <span class="math inline">\(D_{\operatorname{out}}\)</span>.</p>
+</section>
+<section id="limitations" class="level2">
+<h2 class="anchored" data-anchor-id="limitations">Limitations</h2>
+<p>This simulation study assumed that spatial CV could take advantage of regularly distributed observations, such that all locations had a similar density of measurement points. This assumption is often violated, as it is often impractical to obtain a uniform sample across large areas, and as such observations are often clustered in more convenient locations and relatively sparse in less accessible areas <span class="citation" data-cites="meyer2022 martin2012">(<a href="#ref-meyer2022" role="doc-biblioref">Meyer and Pebesma 2022</a>; <a href="#ref-martin2012" role="doc-biblioref">Martin, Blossey, and Ellis 2012</a>)</span>. Alternative approaches not investigated in this study may be more effective in these situations; for instance, when the expected distance between training data and model predictions is known, <span class="citation" data-cites="milà2022">Milà et al. (<a href="#ref-milà2022" role="doc-biblioref">2022</a>)</span> proposes an alternative nearest neighbor distance matching CV approach which may equal or improve upon buffered leave-one-out CV. An alternative approach put forward by <span class="citation" data-cites="meyer2018">Meyer et al. (<a href="#ref-meyer2018" role="doc-biblioref">2018</a>)</span> uses meaningful, human-defined locations as groups for CV, which may produce better results than the automated partitioning methods investigated in this study. While we believe our results clearly demonstrate the benefits of spatial CV for sampling designs resembling our simulation, we do not pretend to present the one CV approach to rule them all.</p>
+<p>We additionally do not expect these results, focused upon using CV to evaluate the accuracy of predictive models, will necessarily transfer to map accuracy assessments. <span class="citation" data-cites="stehman2019">Stehman and Foody (<a href="#ref-stehman2019" role="doc-biblioref">2019</a>)</span> explained that design-based sampling approaches provide unbiased assessments of map accuracy, while <span class="citation" data-cites="wadoux2021">Wadoux et al. (<a href="#ref-wadoux2021" role="doc-biblioref">2021</a>)</span> demonstrated that spatial CV methods may be overly pessimistic when assessing map accuracy, and <span class="citation" data-cites="debruin2022">Bruin et al. (<a href="#ref-debruin2022" role="doc-biblioref">2022</a>)</span> suggested sampling-intensity weighted CV approaches for map accuracy assessments in situations where the study area has been unevenly sampled. However, we expect these results will be informative in the many situations requiring estimates of model accuracy, particularly given that traditional held-out test sets are somewhat rare in the spatial modeling literature.</p>
+<p>Lastly, we did not investigate any CV approaches which aim to preserve outcome or predictor distributions across <span class="math inline">\(D_{\operatorname{out}}\)</span>. When working with imbalanced outcomes, random sampling may produce <span class="math inline">\(D_{\operatorname{out}}\)</span> with notably different outcome distributions than the overall training data, which may bias performance estimates. Assigning stratified samples of observations to <span class="math inline">\(D_{\operatorname{out}}\)</span> can address this, but it is not obvious how to use stratified sampling when assigning groups of observations (such as a spatial cluster or block), with one outcome value per observation, to <span class="math inline">\(D_{\operatorname{out}}\)</span> as a unit. The <code>rsample</code> package allows stratified CV when all observations within a given group have identical outcome values (that is, when groups are strictly nested within the stratification variable), but this condition is rare and difficult to enforce when using unsupervised group assignment based on spatial location, as with all the spatial CV methods we investigated.</p>
+<p>Creating <span class="math inline">\(D_{\operatorname{out}}\)</span> based on predictor space, rather than outcome distributions, has also been proposed as a solution to spatial CV procedures restricting the predictor ranges present in <span class="math inline">\(D_{\operatorname{in}}\)</span>. This is a particular challenge if the predictors themselves are spatially structured, and may unintentionally force models to extrapolate further in predictor space than would be expected when predicting new data <span class="citation" data-cites="Roberts2017">(<a href="#ref-Roberts2017" role="doc-biblioref">Roberts et al. 2017</a>)</span>. As increasing distance in predictor space often correlates with increasing error <span class="citation" data-cites="thuiller2004 sheridan2004 meyer2021">(e.g. <a href="#ref-thuiller2004" role="doc-biblioref">Thuiller et al. 2004</a>; <a href="#ref-sheridan2004" role="doc-biblioref">Sheridan et al. 2004</a>; <a href="#ref-meyer2021" role="doc-biblioref">Meyer and Pebesma 2021</a>)</span>, <span class="citation" data-cites="Roberts2017">Roberts et al. (<a href="#ref-Roberts2017" role="doc-biblioref">2017</a>)</span> suggest blocking approaches to minimize distance in predictor space between folds, although to the best of our knowledge these approaches are not yet in widespread use. A related field of research suggests methods for calculating the applicability domain of a model <span class="citation" data-cites="netzeva2005 meyer2021">(<a href="#ref-netzeva2005" role="doc-biblioref">Netzeva et al. 2005</a>; <a href="#ref-meyer2021" role="doc-biblioref">Meyer and Pebesma 2021</a>)</span>, which can help to identify when predicting new observations will require extrapolation in predictor space, and will likely produce predictions with higher than expected errors. Such methods are particularly well-equipped to supplement spatial CV procedures, as it adjusts the permissible distance in predictor space based upon the distance between <span class="math inline">\(D_{\operatorname{in}}\)</span> and <span class="math inline">\(D_{\operatorname{out}}\)</span>.</p>
+</section>
+</section>
+<section id="sec-conclusion" class="level1">
+<h1>Conclusion</h1>
+<p>These results reinforce that spatial CV is essential for evaluating the performance of predictive models fit to data with internal spatial structure, particularly in situations where design-based map accuracy assessments are not practical or germane. Techniques that apply exclusion buffers around assessment sets of spatially conjunct observations, such as spatial clustering and LODO, are likely to produce the best estimates of model performance. The most accurate estimates of model performance are produced when the assessment and analysis data are sufficiently separated so that there is no spatial dependence in the outcome variable between the two sets.</p>
+</section>
+<section id="acknowledgements" class="level1">
+<h1>Acknowledgements</h1>
+<p>We would like to thank Posit, PBC, for support in the development of the <code>rsample</code> and <code>spatialsample</code> packages.</p>
+</section>
+<section id="software-data-and-code-availability" class="level1">
+<h1>Software, data, and code availability</h1>
+<p>The <code>spatialsample</code> package is available online at https://github.com/tidymodels/spatialsample . All data and code used in this paper are available online at https://github.com/cafri-labs/assessing-spatial-cv .</p>
+<div style="page-break-after: always;"></div>
+</section>
+<section id="references" class="level1 unnumbered">
+
+
+</section>
+
+<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents" role="doc-bibliography"><h2 class="anchored quarto-appendix-heading">References</h2><div id="refs" class="references csl-bib-body hanging-indent" role="doc-bibliography">
+<div id="ref-adams2020" class="csl-entry" role="doc-biblioentry">
+Adams, Matthew D., Felix Massey, Karl Chastko, and Calvin Cupini. 2020. <span>“Spatial Modelling of Particulate Matter Air Pollution Sensor Measurements Collected by Community Scientists While Cycling, Land Use Regression with Spatial Cross-Validation, and Applications of Machine Learning for Data Correction.”</span> <em>Atmospheric Environment</em> 230 (June): 117479. <a href="https://doi.org/10.1016/j.atmosenv.2020.117479">https://doi.org/10.1016/j.atmosenv.2020.117479</a>.
+</div>
+<div id="ref-bahn2012" class="csl-entry" role="doc-biblioentry">
+Bahn, Volker, and Brian J. McGill. 2012. <span>“Testing the Predictive Performance of Distribution Models.”</span> <em>Oikos</em> 122 (3): 321–31. <a href="https://doi.org/10.1111/j.1600-0706.2012.00299.x">https://doi.org/10.1111/j.1600-0706.2012.00299.x</a>.
+</div>
+<div id="ref-bastin2019" class="csl-entry" role="doc-biblioentry">
+Bastin, Jean-Francois, Yelena Finegold, Claude Garcia, Danilo Mollicone, Marcelo Rezende, Devin Routh, Constantin M. Zohner, and Thomas W. Crowther. 2019. <span>“The Global Tree Restoration Potential.”</span> <em>Science</em> 365 (6448): 76–79. <a href="https://doi.org/10.1126/science.aax0848">https://doi.org/10.1126/science.aax0848</a>.
+</div>
+<div id="ref-Bates2021" class="csl-entry" role="doc-biblioentry">
+Bates, Stephen, Trevor Hastie, and Robert Tibshirani. 2021. <span>“Cross-Validation: What Does It Estimate and How Well Does It Do It? arXiv:2104.00673v2 [Stat.ME].”</span> <a href="https://doi.org/10.48550/arXiv.2104.00673">https://doi.org/10.48550/arXiv.2104.00673</a>.
+</div>
+<div id="ref-Breiman2001" class="csl-entry" role="doc-biblioentry">
+Breiman, Leo. 2001. <span>“<span>Random Forests</span>.”</span> <em>Machine Learning</em> 45: 5–32. <a href="https://doi.org/10.1023/A:1010933404324">https://doi.org/10.1023/A:1010933404324</a>.
+</div>
+<div id="ref-brenning2012" class="csl-entry" role="doc-biblioentry">
+Brenning, Alexander. 2012. <span>“Spatial Cross-Validation and Bootstrap for the Assessment of Prediction Rules in Remote Sensing: The <span>R</span> Package <span class="nocase">sperrorest</span>.”</span> <em>2012 IEEE International Geoscience and Remote Sensing Symposium</em>, July. <a href="https://doi.org/10.1109/igarss.2012.6352393">https://doi.org/10.1109/igarss.2012.6352393</a>.
+</div>
+<div id="ref-debruin2022" class="csl-entry" role="doc-biblioentry">
+Bruin, Sytze de, Dick J. Brus, Gerard B. M. Heuvelink, Tom van Ebbenhorst Tengbergen, and Alexandre M.J-C. Wadoux. 2022. <span>“Dealing with Clustered Samples for Assessing Map Accuracy by Cross-Validation.”</span> <em>Ecological Informatics</em> 69 (July): 101665. <a href="https://doi.org/10.1016/j.ecoinf.2022.101665">https://doi.org/10.1016/j.ecoinf.2022.101665</a>.
+</div>
+<div id="ref-brus2020" class="csl-entry" role="doc-biblioentry">
+Brus, Dick J. 2020. <span>“Statistical Approaches for Spatial Sample Survey: Persistent Misconceptions and New Developments.”</span> <em>European Journal of Soil Science</em> 72 (2): 686–703. <a href="https://doi.org/10.1111/ejss.12988">https://doi.org/10.1111/ejss.12988</a>.
+</div>
+<div id="ref-s2" class="csl-entry" role="doc-biblioentry">
+Dunnington, Dewey, Edzer Pebesma, and Ege Rubak. 2021. <em><span class="nocase">s2</span>: Spherical Geometry Operators Using the <span>S2</span> Geometry Library</em>. <a href="https://CRAN.R-project.org/package=s2">https://CRAN.R-project.org/package=s2</a>.
+</div>
+<div id="ref-efron1986" class="csl-entry" role="doc-biblioentry">
+Efron, Bradley. 1986. <span>“How Biased Is the Apparent Error Rate of a Prediction Rule?”</span> <em>Journal of the American Statistical Association</em> 81 (394): 461–70. <a href="https://doi.org/10.1080/01621459.1986.10478291">https://doi.org/10.1080/01621459.1986.10478291</a>.
+</div>
+<div id="ref-efron1983" class="csl-entry" role="doc-biblioentry">
+Efron, Bradley, and Gail Gong. 1983. <span>“A Leisurely Look at the Bootstrap, the Jackknife, and Cross-Validation.”</span> <em>The American Statistician</em> 37 (1): 36–48. <a href="https://doi.org/10.1080/00031305.1983.10483087">https://doi.org/10.1080/00031305.1983.10483087</a>.
+</div>
+<div id="ref-fick2017" class="csl-entry" role="doc-biblioentry">
+Fick, Stephen E., and Robert J. Hijmans. 2017. <span>“WorldClim 2: New 1<span>-</span>Km Spatial Resolution Climate Surfaces for Global Land Areas.”</span> <em>International Journal of Climatology</em> 37 (12): 4302–15. <a href="https://doi.org/10.1002/joc.5086">https://doi.org/10.1002/joc.5086</a>.
+</div>
+<div id="ref-rsample" class="csl-entry" role="doc-biblioentry">
+Frick, Hannah, Fanny Chow, Max Kuhn, Michael Mahoney, Julia Silge, and Hadley Wickham. 2022. <em><span class="nocase">rsample</span>: General Resampling Infrastructure</em>. <a href="https://CRAN.R-project.org/package=rsample">https://CRAN.R-project.org/package=rsample</a>.
+</div>
+<div id="ref-gong1986" class="csl-entry" role="doc-biblioentry">
+Gong, Gail. 1986. <span>“Cross-Validation, the Jackknife, and the Bootstrap: Excess Error Estimation in Forward Logistic Regression.”</span> <em>Journal of the American Statistical Association</em> 81 (393): 108–13. <a href="https://doi.org/10.1080/01621459.1986.10478245">https://doi.org/10.1080/01621459.1986.10478245</a>.
+</div>
+<div id="ref-degruijter1990" class="csl-entry" role="doc-biblioentry">
+Gruijter, J. J. de, and C. J. F. ter Braak. 1990. <span>“Model-Free Estimation from Spatial Samples: A Reappraisal of Classical Sampling Theory.”</span> <em>Mathematical Geology</em> 22 (4): 407–15. <a href="https://doi.org/10.1007/bf00890327">https://doi.org/10.1007/bf00890327</a>.
+</div>
+<div id="ref-hengl2017" class="csl-entry" role="doc-biblioentry">
+Hengl, Tomislav, Jorge Mendes de Jesus, Gerard B. M. Heuvelink, Maria Ruiperez Gonzalez, Milan Kilibarda, Aleksandar Blagotić, Wei Shangguan, et al. 2017. <span>“SoilGrids250m: Global Gridded Soil Information Based on Machine Learning.”</span> Edited by Ben Bond-Lamberty. <em>PLOS ONE</em> 12 (2): e0169748. <a href="https://doi.org/10.1371/journal.pone.0169748">https://doi.org/10.1371/journal.pone.0169748</a>.
+</div>
+<div id="ref-automap" class="csl-entry" role="doc-biblioentry">
+Hiemstra, P. H., E. J. Pebesma, C. J. W. Twenhöfel, and G. B. M. Heuvelink. 2008. <span>“Real-Time Automatic Interpolation of Ambient Gamma Dose Rates from the Dutch Radioactivity Monitoring Network.”</span> <em>Computers &amp; Geosciences</em>. <a href="https://doi.org/10.1016/j.cageo.2008.10.011">https://doi.org/10.1016/j.cageo.2008.10.011</a>.
+</div>
+<div id="ref-vandenhoogen2019" class="csl-entry" role="doc-biblioentry">
+Hoogen, Johan van den, Stefan Geisen, Devin Routh, Howard Ferris, Walter Traunspurger, David A. Wardle, Ron G. M. de Goede, et al. 2019. <span>“Soil Nematode Abundance and Functional Group Composition at a Global Scale.”</span> <em>Nature</em> 572 (7768): 194–98. <a href="https://doi.org/10.1038/s41586-019-1418-6">https://doi.org/10.1038/s41586-019-1418-6</a>.
+</div>
+<div id="ref-karasiak2021" class="csl-entry" role="doc-biblioentry">
+Karasiak, N., J.-F. Dejoux, C. Monteil, and D. Sheeren. 2021. <span>“Spatial Dependence Between Training and Test Sets: Another Pitfall of Classification Accuracy Assessment in Remote Sensing.”</span> <em>Machine Learning</em> 111 (7): 2715–40. <a href="https://doi.org/10.1007/s10994-021-05972-1">https://doi.org/10.1007/s10994-021-05972-1</a>.
+</div>
+<div id="ref-tune" class="csl-entry" role="doc-biblioentry">
+Kuhn, Max. 2022. <em><span class="nocase">tune</span>: Tidy Tuning Tools</em>. <a href="https://CRAN.R-project.org/package=tune">https://CRAN.R-project.org/package=tune</a>.
+</div>
+<div id="ref-dials" class="csl-entry" role="doc-biblioentry">
+Kuhn, Max, and Hannah Frick. 2022. <em><span class="nocase">dials</span>: Tools for Creating Tuning Parameter Values</em>. <a href="https://CRAN.R-project.org/package=dials">https://CRAN.R-project.org/package=dials</a>.
+</div>
+<div id="ref-Kuhn2013" class="csl-entry" role="doc-biblioentry">
+Kuhn, Max, and Kjell Johnson. 2013. <em>Applied Predictive Modeling</em>. Vol. 26. Springer. <a href="https://doi.org/10.1007/978-1-4614-6849-3">https://doi.org/10.1007/978-1-4614-6849-3</a>.
+</div>
+<div id="ref-kuhn2019" class="csl-entry" role="doc-biblioentry">
+———. 2019. <em>Feature Engineering and Selection</em>. Chapman; Hall/CRC. <a href="https://doi.org/10.1201/9781315108230">https://doi.org/10.1201/9781315108230</a>.
+</div>
+<div id="ref-tmwr" class="csl-entry" role="doc-biblioentry">
+Kuhn, Max, and Julia Silge. 2022. <em>Tidy Modeling with <span>R</span></em>. O’Reilly.
+</div>
+<div id="ref-lerest2014" class="csl-entry" role="doc-biblioentry">
+Le Rest, Kévin, David Pinaud, Pascal Monestiez, Joël Chadoeuf, and Vincent Bretagnolle. 2014. <span>“Spatial Leave-One-Out Cross-Validation for Variable Selection in the Presence of Spatial Autocorrelation.”</span> <em>Global Ecology and Biogeography</em> 23 (7): 811–20. <a href="https://doi.org/10.1111/geb.12161">https://doi.org/10.1111/geb.12161</a>.
+</div>
+<div id="ref-legendre1989" class="csl-entry" role="doc-biblioentry">
+Legendre, Pierre, and Marie Josée Fortin. 1989. <span>“Spatial Pattern and Ecological Analysis.”</span> <em>Vegetatio</em> 80 (2): 107–38. <a href="https://doi.org/10.1007/bf00048036">https://doi.org/10.1007/bf00048036</a>.
+</div>
+<div id="ref-spatialsample" class="csl-entry" role="doc-biblioentry">
+Mahoney, Michael, and Julia Silge. 2022. <em><span class="nocase">spatialsample</span>: Spatial Resampling Infrastructure</em>. <a href="https://CRAN.R-project.org/package=spatialsample">https://CRAN.R-project.org/package=spatialsample</a>.
+</div>
+<div id="ref-martin2012" class="csl-entry" role="doc-biblioentry">
+Martin, Laura J, Bernd Blossey, and Erle Ellis. 2012. <span>“Mapping Where Ecologists Work: Biases in the Global Distribution of Terrestrial Ecological Observations.”</span> <em>Frontiers in Ecology and the Environment</em> 10 (4): 195–201. <a href="https://doi.org/10.1890/110154">https://doi.org/10.1890/110154</a>.
+</div>
+<div id="ref-meyer2021" class="csl-entry" role="doc-biblioentry">
+Meyer, Hanna, and Edzer Pebesma. 2021. <span>“Predicting into Unknown Space? Estimating the Area of Applicability of Spatial Prediction Models.”</span> <em>Methods in Ecology and Evolution</em> 12 (9): 1620–33. <a href="https://doi.org/10.1111/2041-210x.13650">https://doi.org/10.1111/2041-210x.13650</a>.
+</div>
+<div id="ref-meyer2022" class="csl-entry" role="doc-biblioentry">
+———. 2022. <span>“Machine Learning-Based Global Maps of Ecological Variables and the Challenge of Assessing Them.”</span> <em>Nature Communications</em> 13 (1). <a href="https://doi.org/10.1038/s41467-022-29838-9">https://doi.org/10.1038/s41467-022-29838-9</a>.
+</div>
+<div id="ref-meyer2018" class="csl-entry" role="doc-biblioentry">
+Meyer, Hanna, Christoph Reudenbach, Tomislav Hengl, Marwan Katurji, and Thomas Nauss. 2018. <span>“Improving Performance of Spatio-Temporal Machine Learning Models Using Forward Feature Selection and Target-Oriented Validation.”</span> <em>Environmental Modelling &amp; Software</em> 101 (March): 1–9. <a href="https://doi.org/10.1016/j.envsoft.2017.12.001">https://doi.org/10.1016/j.envsoft.2017.12.001</a>.
+</div>
+<div id="ref-meyer2019" class="csl-entry" role="doc-biblioentry">
+Meyer, Hanna, Christoph Reudenbach, Stephan Wöllauer, and Thomas Nauss. 2019. <span>“Importance of Spatial Predictor Variable Selection in Machine Learning Applications <span></span> Moving from Data Reproduction to Spatial Prediction.”</span> <em>Ecological Modelling</em> 411 (November): 108815. <a href="https://doi.org/10.1016/j.ecolmodel.2019.108815">https://doi.org/10.1016/j.ecolmodel.2019.108815</a>.
+</div>
+<div id="ref-milà2022" class="csl-entry" role="doc-biblioentry">
+Milà, Carles, Jorge Mateu, Edzer Pebesma, and Hanna Meyer. 2022. <span>“Nearest Neighbour Distance Matching Leave<span>-</span>One<span>-</span>Out Cross<span>-</span>Validation for Map Validation.”</span> <em>Methods in Ecology and Evolution</em> 13 (6): 1304–16. <a href="https://doi.org/10.1111/2041-210x.13851">https://doi.org/10.1111/2041-210x.13851</a>.
+</div>
+<div id="ref-netzeva2005" class="csl-entry" role="doc-biblioentry">
+Netzeva, Tatiana I., Andrew P. Worth, Tom Aldenberg, Romualdo Benigni, Mark T. D. Cronin, Paola Gramatica, Joanna S. Jaworska, et al. 2005. <span>“Current Status of Methods for Defining the Applicability Domain of (Quantitative) Structure-Activity Relationships.”</span> <em>Alternatives to Laboratory Animals</em> 33 (2): 155–73. <a href="https://doi.org/10.1177/026119290503300209">https://doi.org/10.1177/026119290503300209</a>.
+</div>
+<div id="ref-osullivan2010" class="csl-entry" role="doc-biblioentry">
+O’Sullivan, David, and David J. Unwin. 2010. <em>Geographic Information Analysis</em>. John Wiley &amp; Sons, Inc. <a href="https://doi.org/10.1002/9780470549094">https://doi.org/10.1002/9780470549094</a>.
+</div>
+<div id="ref-sf" class="csl-entry" role="doc-biblioentry">
+Pebesma, Edzer. 2018. <span>“<span class="nocase">Simple Features for R: Standardized Support for Spatial Vector Data</span>.”</span> <em><span>The R Journal</span></em> 10 (1): 439–46. <a href="https://doi.org/10.32614/RJ-2018-009">https://doi.org/10.32614/RJ-2018-009</a>.
+</div>
+<div id="ref-units" class="csl-entry" role="doc-biblioentry">
+Pebesma, Edzer, Thomas Mailund, and James Hiebert. 2016. <span>“Measurement Units in <span>R</span>.”</span> <em>R Journal</em> 8 (2): 486–94. <a href="https://doi.org/10.32614/RJ-2016-061">https://doi.org/10.32614/RJ-2016-061</a>.
+</div>
+<div id="ref-ploton2020" class="csl-entry" role="doc-biblioentry">
+Ploton, Pierre, Frédéric Mortier, Maxime Réjou-Méchain, Nicolas Barbier, Nicolas Picard, Vivien Rossi, Carsten Dormann, et al. 2020. <span>“Spatial Validation Reveals Poor Predictive Performance of Large-Scale Ecological Mapping Models.”</span> <em>Nature Communications</em> 11 (1). <a href="https://doi.org/10.1038/s41467-020-18321-y">https://doi.org/10.1038/s41467-020-18321-y</a>.
+</div>
+<div id="ref-pohjankukka2017" class="csl-entry" role="doc-biblioentry">
+Pohjankukka, Jonne, Tapio Pahikkala, Paavo Nevalainen, and Jukka Heikkonen. 2017. <span>“Estimating the Prediction Performance of Spatial Models via Spatial k-Fold Cross Validation.”</span> <em>International Journal of Geographical Information Science</em> 31 (10): 2001–19. <a href="https://doi.org/10.1080/13658816.2017.1346255">https://doi.org/10.1080/13658816.2017.1346255</a>.
+</div>
+<div id="ref-Probst2018" class="csl-entry" role="doc-biblioentry">
+Probst, Philipp, Bernd Bischl, and Anne-Laure Boulesteix. 2018. <span>“Tunability: Importance of Hyperparameters of Machine Learning Algorithms.”</span> arXiv. <a href="https://doi.org/10.48550/ARXIV.1802.09596">https://doi.org/10.48550/ARXIV.1802.09596</a>.
+</div>
+<div id="ref-R" class="csl-entry" role="doc-biblioentry">
+R Core Team. 2022. <em><span>R</span>: A Language and Environment for Statistical Computing</em>. Vienna, Austria: R Foundation for Statistical Computing. <a href="https://www.R-project.org/">https://www.R-project.org/</a>.
+</div>
+<div id="ref-Roberts2017" class="csl-entry" role="doc-biblioentry">
+Roberts, David R., Volker Bahn, Simone Ciuti, Mark S. Boyce, Jane Elith, Gurutzeta Guillera-Arroita, Severin Hauenstein, et al. 2017. <span>“Cross-Validation Strategies for Data with Temporal, Spatial, Hierarchical, or Phylogenetic Structure.”</span> <em>Ecography</em> 40 (8): 913–29. https://doi.org/<a href="https://doi.org/10.1111/ecog.02881">https://doi.org/10.1111/ecog.02881</a>.
+</div>
+<div id="ref-RandomFields" class="csl-entry" role="doc-biblioentry">
+Schlather, Martin, Alexander Malinowski, Peter J. Menck, Marco Oesting, and Kirstin Strokorb. 2015. <span>“Analysis, Simulation and Prediction of Multivariate Random Fields with Package <span>RandomFields</span>.”</span> <em>Journal of Statistical Software</em> 63 (8): 1–25. <a href="https://doi.org/10.18637/jss.v063.i08">https://doi.org/10.18637/jss.v063.i08</a>.
+</div>
+<div id="ref-schratz2019" class="csl-entry" role="doc-biblioentry">
+Schratz, Patrick, Jannes Muenchow, Eugenia Iturritxa, Jakob Richter, and Alexander Brenning. 2019. <span>“Hyperparameter Tuning and Performance Assessment of Statistical and Machine-Learning Algorithms Using Spatial Data.”</span> <em>Ecological Modelling</em> 406 (August): 109–20. <a href="https://doi.org/10.1016/j.ecolmodel.2019.06.002">https://doi.org/10.1016/j.ecolmodel.2019.06.002</a>.
+</div>
+<div id="ref-sheridan2004" class="csl-entry" role="doc-biblioentry">
+Sheridan, Robert P., Bradley P. Feuston, Vladimir N. Maiorov, and Simon K. Kearsley. 2004. <span>“Similarity to Molecules in the Training Set Is a Good Discriminator for Prediction Accuracy in <span>QSAR</span>.”</span> <em>Journal of Chemical Information and Computer Sciences</em> 44 (6): 1912–28. <a href="https://doi.org/10.1021/ci049782w">https://doi.org/10.1021/ci049782w</a>.
+</div>
+<div id="ref-stehman2019" class="csl-entry" role="doc-biblioentry">
+Stehman, Stephen V., and Giles M. Foody. 2019. <span>“Key Issues in Rigorous Accuracy Assessment of Land Cover Products.”</span> <em>Remote Sensing of Environment</em> 231 (September): 111199. <a href="https://doi.org/10.1016/j.rse.2019.05.018">https://doi.org/10.1016/j.rse.2019.05.018</a>.
+</div>
+<div id="ref-Stone1974" class="csl-entry" role="doc-biblioentry">
+Stone, M. 1974. <span>“Cross-Validatory Choice and Assessment of Statistical Predictions.”</span> <em>Journal of the Royal Statistical Society. Series B (Methodological)</em> 36 (2): 111–47. <a href="http://www.jstor.org/stable/2984809">http://www.jstor.org/stable/2984809</a>.
+</div>
+<div id="ref-telford2009" class="csl-entry" role="doc-biblioentry">
+Telford, R. J., and H. J. B. Birks. 2009. <span>“Evaluation of Transfer Functions in Spatially Structured Environments.”</span> <em>Quaternary Science Reviews</em> 28 (13-14): 1309–16. <a href="https://doi.org/10.1016/j.quascirev.2008.12.020">https://doi.org/10.1016/j.quascirev.2008.12.020</a>.
+</div>
+<div id="ref-thuiller2004" class="csl-entry" role="doc-biblioentry">
+Thuiller, Wilfried, Lluis Brotons, Miguel B. Araújo, and Sandra Lavorel. 2004. <span>“Effects of Restricting Environmental Range of Data to Project Current and Future Species Distributions.”</span> <em>Ecography</em> 27 (2): 165–72. <a href="https://doi.org/10.1111/j.0906-7590.2004.03673.x">https://doi.org/10.1111/j.0906-7590.2004.03673.x</a>.
+</div>
+<div id="ref-townsend2007" class="csl-entry" role="doc-biblioentry">
+Townsend, Peterson A., Monica Papeş, and Muir Eaton. 2007. <span>“Transferability and Model Evaluation in Ecological Niche Modeling: A Comparison of <span>GARP</span> and <span>Maxent</span>.”</span> <em>Ecography</em> 30 (4): 550–60. <a href="https://doi.org/10.1111/j.0906-7590.2007.05102.x">https://doi.org/10.1111/j.0906-7590.2007.05102.x</a>.
+</div>
+<div id="ref-valavi2018" class="csl-entry" role="doc-biblioentry">
+Valavi, Roozbeh, Jane Elith, José J. Lahoz-Monfort, and Gurutzeta Guillera-Arroita. 2018. <span>“<span>blockCV</span>: An <span>R</span> Package for Generating Spatially or Environmentally Separated Folds for k-Fold Cross-Validation of Species Distribution Models.”</span> Edited by David Warton. <em>Methods in Ecology and Evolution</em> 10 (2): 225–32. <a href="https://doi.org/10.1111/2041-210x.13107">https://doi.org/10.1111/2041-210x.13107</a>.
+</div>
+<div id="ref-varma2006" class="csl-entry" role="doc-biblioentry">
+Varma, Sudhir, and Richard Simon. 2006. <span>“Bias in Error Estimation When Using Cross-Validation for Model Selection.”</span> <em>BMC Bioinformatics</em> 7 (1). <a href="https://doi.org/10.1186/1471-2105-7-91">https://doi.org/10.1186/1471-2105-7-91</a>.
+</div>
+<div id="ref-wadoux2021" class="csl-entry" role="doc-biblioentry">
+Wadoux, Alexandre M. J.-C., Gerard B. M. Heuvelink, Sytze de Bruin, and Dick J. Brus. 2021. <span>“Spatial Cross-Validation Is Not the Right Way to Evaluate Map Accuracy.”</span> <em>Ecological Modelling</em> 457 (October): 109692. <a href="https://doi.org/10.1016/j.ecolmodel.2021.109692">https://doi.org/10.1016/j.ecolmodel.2021.109692</a>.
+</div>
+<div id="ref-walvoort2010" class="csl-entry" role="doc-biblioentry">
+Walvoort, D. J. J., D. J. Brus, and J. J. de Gruijter. 2010. <span>“An <span>R</span> Package for Spatial Coverage Sampling and Random Sampling from Compact Geographical Strata by k-Means.”</span> <em>Computers &amp; Geosciences</em> 36 (10): 1261–67. <a href="https://doi.org/10.1016/j.cageo.2010.04.005">https://doi.org/10.1016/j.cageo.2010.04.005</a>.
+</div>
+<div id="ref-wenger2012" class="csl-entry" role="doc-biblioentry">
+Wenger, Seth J., and Julian D. Olden. 2012. <span>“Assessing Transferability of Ecological Models: An Underappreciated Aspect of Statistical Validation.”</span> <em>Methods in Ecology and Evolution</em> 3 (2): 260–67. <a href="https://doi.org/10.1111/j.2041-210x.2011.00170.x">https://doi.org/10.1111/j.2041-210x.2011.00170.x</a>.
+</div>
+<div id="ref-wickham2019" class="csl-entry" role="doc-biblioentry">
+Wickham, Hadley, Mara Averick, Jennifer Bryan, Winston Chang, Lucy McGowan, Romain François, Garrett Grolemund, et al. 2019. <span>“Welcome to the Tidyverse.”</span> <em>Journal of Open Source Software</em> 4 (43): 1686. <a href="https://doi.org/10.21105/joss.01686">https://doi.org/10.21105/joss.01686</a>.
+</div>
+<div id="ref-ranger" class="csl-entry" role="doc-biblioentry">
+Wright, Marvin N., and Andreas Ziegler. 2017. <span>“<span class="nocase">ranger</span>: A Fast Implementation of Random Forests for High Dimensional Data in <span>C++</span> and <span>R</span>.”</span> <em>Journal of Statistical Software</em> 77 (1): 1–17. <a href="https://doi.org/10.18637/jss.v077.i01">https://doi.org/10.18637/jss.v077.i01</a>.
+</div>
+<div id="ref-yates2018" class="csl-entry" role="doc-biblioentry">
+Yates, Katherine L., Phil J. Bouchet, M. Julian Caley, Kerrie Mengersen, Christophe F. Randin, Stephen Parnell, Alan H. Fielding, et al. 2018. <span>“Outstanding Challenges in the Transferability of Ecological Models.”</span> <em>Trends in Ecology &amp; Evolution</em> 33 (10): 790–802. <a href="https://doi.org/10.1016/j.tree.2018.08.001">https://doi.org/10.1016/j.tree.2018.08.001</a>.
+</div>
+</div></section></div></main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    target: function(trigger) {
+      return trigger.previousElementSibling;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+</body></html>
